@@ -1,8 +1,13 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import App from './App'
+import { LocalStorageService } from './services/localStorageService'
 
 describe('App gates', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
   beforeEach(() => {
     localStorage.clear()
     window.history.pushState({}, '', '/')
@@ -26,5 +31,33 @@ describe('App gates', () => {
     fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
 
     expect(screen.getByText('Lab result entry')).toBeTruthy()
+  })
+
+  it('saves a lab session with questionnaire responses', () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Continue to questionnaire/i }))
+
+    expect(screen.getByText('Contextual questionnaire')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText(/Cycle pattern during this monitoring period/i), {
+      target: { value: 'irregular' },
+    })
+    fireEvent.change(screen.getByLabelText(/Lifestyle context relevant to lipid tracking/i), {
+      target: { value: 'No major diet or activity changes this month.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Save session/i }))
+
+    const sessions = storage.getAllSessions()
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].questionnaire).toEqual({
+      'cycle-pattern': 'irregular',
+      'cardio-context': 'No major diet or activity changes this month.',
+    })
   })
 })

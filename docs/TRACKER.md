@@ -27,6 +27,9 @@ Local-first MVP flow implementation in progress.
 - [x] Replaced single-screen prototype with routed app shell
 - [x] Added consent gate with local data disclosure
 - [x] Added age eligibility gate for users 18 and older
+- [x] Added complete lab entry form with submit blocking, inline errors, and warning flags
+- [x] Added deterministic questionnaire answer capture
+- [x] Added local session persistence after questionnaire submission
 - [x] Added `.env.example`
 - [x] Added README with current scope and commands
 - [x] Added unit tests for validation, scoring, questionnaire generation, local storage, and proxy payload safety
@@ -37,19 +40,17 @@ Local-first MVP flow implementation in progress.
 
 ## In Progress
 
-- [ ] Complete lab entry page with submit blocking, inline errors, and warning flags
-- [ ] Add questionnaire answer capture and local session persistence
+- [ ] Add session history page and session detail view
+- [ ] Add local data purge confirmation flow
 
 ## Next
 
-1. Add session history page and session detail view.
-2. Add local data purge confirmation flow.
-3. Run manual browser/UI smoke test.
-4. Add symptom tracker UI.
-5. Add medication reminder management UI.
-6. Wire the real Gemini API call inside `api/generate-insight.ts`.
-7. Add Gemini response parser and safety rejection handling.
-8. Add insight report screen with mandatory disclaimer and distress note.
+1. Run manual browser/UI smoke test.
+2. Add symptom tracker UI.
+3. Add medication reminder management UI.
+4. Wire the real Gemini API call inside `api/generate-insight.ts`.
+5. Add Gemini response parser and safety rejection handling.
+6. Add insight report screen with mandatory disclaimer and distress note.
 
 ## Later
 
@@ -83,6 +84,9 @@ Local-first MVP flow implementation in progress.
 | 2026-05-22 | `npm test -- src/App.test.tsx` | Passed: 1 file, 1 test |
 | 2026-05-22 | `npm run lint` | Passed |
 | 2026-05-22 | `npm run build` | Passed |
+| 2026-05-22 | `npm test` | Passed: 7 files, 14 tests |
+| 2026-05-22 | `npm run lint` | Passed |
+| 2026-05-22 | `npm run build` | Passed |
 
 ## Completion Estimate
 
@@ -94,11 +98,12 @@ Local-first MVP flow implementation in progress.
 | Scoring engine | Foundation complete |
 | Questionnaire generation | Foundation complete |
 | Local persistence | Consent, age gate, purge, and recovery support added |
-| Lab entry UI | Routed placeholder; full form in progress |
+| Lab entry UI | Complete local-first flow |
 | Consent/age gate | Complete |
+| Questionnaire capture | Complete |
 | Symptom tracker | Not started |
 | Medication reminders | Service scaffold only |
-| Session history | Not started |
+| Session history | Routed placeholder; detail and purge in progress |
 | Gemini proxy | Boundary scaffold only |
 | Report generation | Not started |
 | Deployment | Not started |
