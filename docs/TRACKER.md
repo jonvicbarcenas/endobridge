@@ -4,7 +4,7 @@ Last updated: 2026-05-22
 
 ## Current Phase
 
-Foundation build, capped at roughly 30% MVP completion.
+Local-first MVP flow implementation in progress.
 
 ## Completed
 
@@ -24,6 +24,9 @@ Foundation build, capped at roughly 30% MVP completion.
 - [x] Added consent and age eligibility persistence in `LocalStorageService`
 - [x] Added safe localStorage array recovery for corrupted JSON
 - [x] Added questionnaire-aware session creation
+- [x] Replaced single-screen prototype with routed app shell
+- [x] Added consent gate with local data disclosure
+- [x] Added age eligibility gate for users 18 and older
 - [x] Added `.env.example`
 - [x] Added README with current scope and commands
 - [x] Added unit tests for validation, scoring, questionnaire generation, local storage, and proxy payload safety
@@ -34,22 +37,19 @@ Foundation build, capped at roughly 30% MVP completion.
 
 ## In Progress
 
-- [ ] Manual browser/UI smoke test
-
-Blocked because Playwright is installed but the Chromium browser binary is missing. `npx playwright install chromium` timed out in this environment.
+- [ ] Complete lab entry page with submit blocking, inline errors, and warning flags
+- [ ] Add questionnaire answer capture and local session persistence
 
 ## Next
 
-1. Build full consent and age-gate flow.
-2. Replace the single-screen prototype with routed pages.
-3. Build complete lab entry flow with submit blocking, inline errors, and warning flags.
-4. Add questionnaire answer capture and local persistence.
-5. Add session history page and session detail view.
-6. Add symptom tracker UI.
-7. Add medication reminder management UI.
-8. Wire the real Gemini API call inside `api/generate-insight.ts`.
-9. Add Gemini response parser and safety rejection handling.
-10. Add insight report screen with mandatory disclaimer and distress note.
+1. Add session history page and session detail view.
+2. Add local data purge confirmation flow.
+3. Run manual browser/UI smoke test.
+4. Add symptom tracker UI.
+5. Add medication reminder management UI.
+6. Wire the real Gemini API call inside `api/generate-insight.ts`.
+7. Add Gemini response parser and safety rejection handling.
+8. Add insight report screen with mandatory disclaimer and distress note.
 
 ## Later
 
@@ -80,6 +80,9 @@ Blocked because Playwright is installed but the Chromium browser binary is missi
 | 2026-05-21 | `npm run build` | Passed |
 | 2026-05-21 | HTTP check `http://127.0.0.1:5173` | Status 200 |
 | 2026-05-22 | `npm test -- src/services/localStorageService.test.ts src/models/labSession.test.ts` | Passed: 2 files, 5 tests |
+| 2026-05-22 | `npm test -- src/App.test.tsx` | Passed: 1 file, 1 test |
+| 2026-05-22 | `npm run lint` | Passed |
+| 2026-05-22 | `npm run build` | Passed |
 
 ## Completion Estimate
 
@@ -91,8 +94,8 @@ Blocked because Playwright is installed but the Chromium browser binary is missi
 | Scoring engine | Foundation complete |
 | Questionnaire generation | Foundation complete |
 | Local persistence | Consent, age gate, purge, and recovery support added |
-| Lab entry UI | Prototype |
-| Consent/age gate | Not started |
+| Lab entry UI | Routed placeholder; full form in progress |
+| Consent/age gate | Complete |
 | Symptom tracker | Not started |
 | Medication reminders | Service scaffold only |
 | Session history | Not started |
