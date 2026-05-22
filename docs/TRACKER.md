@@ -4,7 +4,7 @@ Last updated: 2026-05-22
 
 ## Current Phase
 
-Local-first MVP flow implementation in progress.
+Local-first MVP flow complete; next phase should target symptom tracking, medication reminder UI, or the Gemini report slice.
 
 ## Completed
 
@@ -33,6 +33,8 @@ Local-first MVP flow implementation in progress.
 - [x] Added session history page
 - [x] Added session detail view with biomarker, questionnaire, and contributor sections
 - [x] Added local data purge confirmation flow
+- [x] Fixed questionnaire save navigation so completed sessions land on session detail
+- [x] Verified browser smoke for consent, age gate, lab entry, questionnaire, detail/history, and purge
 - [x] Added `.env.example`
 - [x] Added README with current scope and commands
 - [x] Added unit tests for validation, scoring, questionnaire generation, local storage, and proxy payload safety
@@ -43,7 +45,7 @@ Local-first MVP flow implementation in progress.
 
 ## In Progress
 
-- [ ] Manual browser/UI smoke test
+- [ ] No active local-first slice item
 
 ## Next
 
@@ -91,6 +93,7 @@ Local-first MVP flow implementation in progress.
 | 2026-05-22 | `npm test` | Passed: 7 files, 15 tests |
 | 2026-05-22 | `npm run lint` | Passed |
 | 2026-05-22 | `npm run build` | Passed |
+| 2026-05-22 | Browser smoke at `http://127.0.0.1:5173` | Passed: consent, age rejection, adult gate, lab submit, questionnaire save, detail/history, purge |
 
 ## Completion Estimate
 

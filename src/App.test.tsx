@@ -72,6 +72,7 @@ describe('App gates', () => {
 
     const sessions = storage.getAllSessions()
 
+    expect(screen.getByText('Session detail')).toBeTruthy()
     expect(sessions).toHaveLength(1)
     expect(sessions[0].questionnaire).toEqual({
       'cycle-pattern': 'irregular',

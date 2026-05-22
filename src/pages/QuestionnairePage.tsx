@@ -15,6 +15,7 @@ export function QuestionnairePage() {
   const { draft, clearDraft } = useSessionDraft()
   const [responses, setResponses] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
+  const [completedSessionId, setCompletedSessionId] = useState<string | null>(null)
 
   const questions = useMemo(() => {
     if (!draft) return []
@@ -30,6 +31,10 @@ export function QuestionnairePage() {
   }, [draft])
 
   if (!draft) {
+    if (completedSessionId) {
+      return <Navigate replace to={`/history/${completedSessionId}`} />
+    }
+
     return <Navigate replace to="/lab" />
   }
 
@@ -60,6 +65,7 @@ export function QuestionnairePage() {
 
     const session = createLabSession(activeDraft.input, activeDraft.validation, normalizedResponses())
     storage.saveSession(session)
+    setCompletedSessionId(session.sessionId)
     clearDraft()
     navigate(`/history/${session.sessionId}`)
   }
