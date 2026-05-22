@@ -1,4 +1,9 @@
-import type { LabSession, LabSessionInput, ValidationResult } from '../types/session'
+import type {
+  LabSession,
+  LabSessionInput,
+  QuestionnaireResponse,
+  ValidationResult,
+} from '../types/session'
 
 function createId() {
   if (globalThis.crypto?.randomUUID) {
@@ -11,6 +16,7 @@ function createId() {
 export function createLabSession(
   input: LabSessionInput,
   validation: ValidationResult,
+  questionnaire: QuestionnaireResponse | null = null,
 ): LabSession {
   if (!validation.isValid) {
     throw new Error('cannot create a lab session from invalid input')
@@ -26,7 +32,7 @@ export function createLabSession(
       bmi: input.bmi,
       cycleRegularity: input.cycleRegularity,
     },
-    questionnaire: null,
+    questionnaire,
     insightReport: null,
   }
 }

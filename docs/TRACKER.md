@@ -1,6 +1,6 @@
 # EndoBridge Project Tracker
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 
 ## Current Phase
 
@@ -21,6 +21,9 @@ Foundation build, capped at roughly 30% MVP completion.
 - [x] Added `ExportService`
 - [x] Added `NotificationService` scaffold
 - [x] Added serverless `api/generate-insight.ts` proxy boundary
+- [x] Added consent and age eligibility persistence in `LocalStorageService`
+- [x] Added safe localStorage array recovery for corrupted JSON
+- [x] Added questionnaire-aware session creation
 - [x] Added `.env.example`
 - [x] Added README with current scope and commands
 - [x] Added unit tests for validation, scoring, questionnaire generation, local storage, and proxy payload safety
@@ -76,6 +79,7 @@ Blocked because Playwright is installed but the Chromium browser binary is missi
 | 2026-05-21 | `npm run lint` | Passed |
 | 2026-05-21 | `npm run build` | Passed |
 | 2026-05-21 | HTTP check `http://127.0.0.1:5173` | Status 200 |
+| 2026-05-22 | `npm test -- src/services/localStorageService.test.ts src/models/labSession.test.ts` | Passed: 2 files, 5 tests |
 
 ## Completion Estimate
 
@@ -86,7 +90,7 @@ Blocked because Playwright is installed but the Chromium browser binary is missi
 | Validation engine | Foundation complete |
 | Scoring engine | Foundation complete |
 | Questionnaire generation | Foundation complete |
-| Local persistence | Foundation complete |
+| Local persistence | Consent, age gate, purge, and recovery support added |
 | Lab entry UI | Prototype |
 | Consent/age gate | Not started |
 | Symptom tracker | Not started |
