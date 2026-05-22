@@ -30,6 +30,9 @@ Local-first MVP flow implementation in progress.
 - [x] Added complete lab entry form with submit blocking, inline errors, and warning flags
 - [x] Added deterministic questionnaire answer capture
 - [x] Added local session persistence after questionnaire submission
+- [x] Added session history page
+- [x] Added session detail view with biomarker, questionnaire, and contributor sections
+- [x] Added local data purge confirmation flow
 - [x] Added `.env.example`
 - [x] Added README with current scope and commands
 - [x] Added unit tests for validation, scoring, questionnaire generation, local storage, and proxy payload safety
@@ -40,17 +43,15 @@ Local-first MVP flow implementation in progress.
 
 ## In Progress
 
-- [ ] Add session history page and session detail view
-- [ ] Add local data purge confirmation flow
+- [ ] Manual browser/UI smoke test
 
 ## Next
 
-1. Run manual browser/UI smoke test.
-2. Add symptom tracker UI.
-3. Add medication reminder management UI.
-4. Wire the real Gemini API call inside `api/generate-insight.ts`.
-5. Add Gemini response parser and safety rejection handling.
-6. Add insight report screen with mandatory disclaimer and distress note.
+1. Add symptom tracker UI.
+2. Add medication reminder management UI.
+3. Wire the real Gemini API call inside `api/generate-insight.ts`.
+4. Add Gemini response parser and safety rejection handling.
+5. Add insight report screen with mandatory disclaimer and distress note.
 
 ## Later
 
@@ -87,6 +88,9 @@ Local-first MVP flow implementation in progress.
 | 2026-05-22 | `npm test` | Passed: 7 files, 14 tests |
 | 2026-05-22 | `npm run lint` | Passed |
 | 2026-05-22 | `npm run build` | Passed |
+| 2026-05-22 | `npm test` | Passed: 7 files, 15 tests |
+| 2026-05-22 | `npm run lint` | Passed |
+| 2026-05-22 | `npm run build` | Passed |
 
 ## Completion Estimate
 
@@ -103,7 +107,7 @@ Local-first MVP flow implementation in progress.
 | Questionnaire capture | Complete |
 | Symptom tracker | Not started |
 | Medication reminders | Service scaffold only |
-| Session history | Routed placeholder; detail and purge in progress |
+| Session history | Complete local-first history/detail/purge flow |
 | Gemini proxy | Boundary scaffold only |
 | Report generation | Not started |
 | Deployment | Not started |

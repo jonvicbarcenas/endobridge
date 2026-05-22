@@ -1,7 +1,25 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { validateLabSessionInput } from './engines/validationEngine'
+import { createLabSession } from './models/labSession'
 import { LocalStorageService } from './services/localStorageService'
+import type { LabSessionInput } from './types/session'
+
+const validInput: LabSessionInput = {
+  age: 28,
+  bmi: 26.4,
+  cycleRegularity: 'irregular',
+  biomarkers: {
+    ldlC: { value: 130, unit: 'mg/dL' },
+    fastingGlucose: { value: 96, unit: 'mg/dL' },
+    fastingInsulin: { value: 15, unit: 'uIU/mL' },
+    totalTestosterone: { value: 54, unit: 'ng/dL' },
+    amh: { value: 7.2, unit: 'ng/mL' },
+    lhFshRatio: { value: 2.2, unit: 'ratio' },
+    dheas: { value: 250, unit: 'ug/dL' },
+  },
+}
 
 describe('App gates', () => {
   afterEach(() => {
@@ -59,5 +77,36 @@ describe('App gates', () => {
       'cycle-pattern': 'irregular',
       'cardio-context': 'No major diet or activity changes this month.',
     })
+  })
+
+  it('shows history detail and clears local data back to the consent gate', () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    storage.saveSession(
+      createLabSession(validInput, validateLabSessionInput(validInput), {
+        'cycle-pattern': 'irregular',
+      }),
+    )
+    window.history.pushState({}, '', '/history')
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+
+    expect(screen.getByText('Session history')).toBeTruthy()
+    expect(screen.getByText('1 stored session')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('link', { name: /View details/i }))
+
+    expect(screen.getByText('Deterministic contributors')).toBeTruthy()
+    expect(screen.getByText('cycle-pattern')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('link', { name: /Back to history/i }))
+    fireEvent.click(screen.getByRole('button', { name: /Clear local data/i }))
+
+    expect(storage.getAllSessions()).toEqual([])
+    expect(screen.getByText('Consent and local data use')).toBeTruthy()
+
+    confirmSpy.mockRestore()
   })
 })
