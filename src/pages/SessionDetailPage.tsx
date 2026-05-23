@@ -26,6 +26,7 @@ export function SessionDetailPage() {
   const storage = new LocalStorageService()
   const session = sessionId ? storage.getSession(sessionId) : null
   const symptomEntries = sessionId ? storage.getSymptomsForSession(sessionId) : []
+  const activeMedications = storage.getMedications().filter((medication) => medication.isActive)
 
   if (!session) {
     return (
@@ -152,6 +153,17 @@ export function SessionDetailPage() {
         ) : (
           <p className="text-sm text-slate-600">No symptom entries are linked to this session.</p>
         )}
+      </Panel>
+
+      <Panel title="Medication reminder context">
+        <p className="text-sm font-medium text-slate-900">
+          {activeMedications.length}{' '}
+          {activeMedications.length === 1 ? 'active local reminder' : 'active local reminders'}
+        </p>
+        <p className="mt-1 text-sm text-slate-600">
+          Medication names, dosage labels, and schedules remain stored only in this browser and are
+          not part of the Gemini payload boundary.
+        </p>
       </Panel>
 
       <Panel title="Deterministic contributors">

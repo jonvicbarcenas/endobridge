@@ -138,6 +138,40 @@ describe('LocalStorageService', () => {
     expect(service.getMedications()).toEqual([])
   })
 
+  it('updates and deletes medication reminders by medication id', () => {
+    const service = new LocalStorageService()
+    const medication = {
+      medId: 'med-1',
+      name: 'Metformin',
+      dosage: '500mg',
+      scheduleTime: '08:00',
+      frequency: 'daily',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      nextReminderAt: '2026-05-23T08:00:00.000Z',
+      isActive: true,
+    } as MedicationRecord
+
+    service.saveMedication(medication)
+    service.updateMedication('med-1', {
+      dosage: '850mg',
+      isActive: false,
+      nextReminderAt: null,
+    })
+
+    expect(service.getMedications()).toEqual([
+      {
+        ...medication,
+        dosage: '850mg',
+        isActive: false,
+        nextReminderAt: null,
+      },
+    ])
+
+    service.deleteMedication('med-1')
+
+    expect(service.getMedications()).toEqual([])
+  })
+
   it('returns an empty collection for corrupted local storage arrays', () => {
     localStorage.setItem('sessions', '{bad json')
 

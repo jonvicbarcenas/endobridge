@@ -5,6 +5,7 @@ import { AgeGate, ConsentGate } from './components/Gates'
 import { SessionDraftProvider } from './context/SessionDraftContext'
 import { HistoryPage } from './pages/HistoryPage'
 import { LabEntryPage } from './pages/LabEntryPage'
+import { MedicationsPage } from './pages/MedicationsPage'
 import { QuestionnairePage } from './pages/QuestionnairePage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
 import { SymptomsPage } from './pages/SymptomsPage'
@@ -22,6 +23,7 @@ function App() {
                 <Route index element={<Navigate replace to="/lab" />} />
                 <Route path="/lab" element={<LabEntryPage />} />
                 <Route path="/symptoms" element={<SymptomsPage />} />
+                <Route path="/medications" element={<MedicationsPage />} />
                 <Route path="/questionnaire" element={<QuestionnairePage />} />
                 <Route
                   path="/history"

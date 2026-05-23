@@ -84,8 +84,11 @@ export interface MedicationRecord {
   name: string
   dosage: string
   scheduleTime: string
-  frequency: string
+  frequency: MedicationFrequency
   createdAt: string
   nextReminderAt: string | null
   isActive: boolean
+  lastTakenAt?: string | null
 }
+
+export type MedicationFrequency = 'daily' | 'weekly' | 'asNeeded'

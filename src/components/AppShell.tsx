@@ -5,6 +5,7 @@ import {
   FlaskConical,
   History,
   ListChecks,
+  Pill,
   ShieldCheck,
 } from 'lucide-react'
 import { useMemo } from 'react'
@@ -14,6 +15,7 @@ import { LocalStorageService } from '../services/localStorageService'
 const navItems = [
   { to: '/lab', label: 'Lab Entry', icon: FlaskConical },
   { to: '/symptoms', label: 'Symptoms', icon: ListChecks },
+  { to: '/medications', label: 'Medications', icon: Pill },
   { to: '/history', label: 'History', icon: History },
 ]
 

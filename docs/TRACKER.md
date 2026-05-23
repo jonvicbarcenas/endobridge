@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Current Phase
 
-Symptom tracker local-first slice complete; next phase should target medication reminder UI or the Gemini report slice.
+Medication reminder local-first slice complete; next phase should target the Gemini report slice.
 
 ## Completed
 
@@ -49,6 +49,14 @@ Symptom tracker local-first slice complete; next phase should target medication 
 - [x] Linked symptom counts and entries into history and session detail views
 - [x] Added focused tests for symptom storage, trend summary, route interaction, and session-linked display
 - [x] Verified browser smoke for consent, lab entry, questionnaire, symptom log, history, and detail flow
+- [x] Added `/medications` route and primary navigation item
+- [x] Added persistent medication user-managed disclaimer
+- [x] Added local medication reminder form for name, dosage, schedule time, and frequency
+- [x] Added medication reminder edit, pause/resume, mark-taken, and delete controls
+- [x] Added explicit browser-alert opt-in with in-app fallback messaging
+- [x] Added LocalStorageService medication update/delete support
+- [x] Linked active medication reminder context into history and session detail views
+- [x] Added focused tests for medication storage and route interaction
 
 ## In Progress
 
@@ -56,11 +64,11 @@ Symptom tracker local-first slice complete; next phase should target medication 
 
 ## Next
 
-1. Add medication reminder management UI.
-2. Wire the real Gemini API call inside `api/generate-insight.ts`.
-3. Add Gemini response parser and safety rejection handling.
-4. Add insight report screen with mandatory disclaimer and distress note.
-5. Add print/share report workflow.
+1. Wire the real Gemini API call inside `api/generate-insight.ts`.
+2. Add Gemini response parser and safety rejection handling.
+3. Add insight report screen with mandatory disclaimer and distress note.
+4. Add print/share report workflow.
+5. Add biomarker longitudinal summary integration for Gemini payload context.
 
 ## Later
 
@@ -105,6 +113,10 @@ Symptom tracker local-first slice complete; next phase should target medication 
 | 2026-05-23 | `npm run lint` | Passed |
 | 2026-05-23 | `npm run build` | Passed |
 | 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chrome | Passed: consent, lab submit, questionnaire save, symptom log, history/detail symptom display |
+| 2026-05-23 | `npm test` | Passed: 8 files, 22 tests |
+| 2026-05-23 | `npm run lint` | Passed |
+| 2026-05-23 | `npm run build` | Passed |
+| 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chrome | Passed: consent, medication add/edit/pause local flow |
 
 ## Completion Estimate
 
@@ -120,7 +132,7 @@ Symptom tracker local-first slice complete; next phase should target medication 
 | Consent/age gate | Complete |
 | Questionnaire capture | Complete |
 | Symptom tracker | Complete local-first flow with trend summary helper |
-| Medication reminders | Service scaffold only |
+| Medication reminders | Complete local-first UI and storage flow |
 | Session history | Complete local-first history/detail/purge flow |
 | Gemini proxy | Boundary scaffold only |
 | Report generation | Not started |

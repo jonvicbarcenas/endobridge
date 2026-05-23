@@ -1,3 +1,5 @@
+import type { MedicationRecord } from '../types/session'
+
 export class NotificationService {
   mode: 'push' | 'in-app' = 'in-app'
 
@@ -12,9 +14,21 @@ export class NotificationService {
     return this.mode
   }
 
-  scheduleReminder(title: string, body: string) {
+  scheduleReminder(medication: MedicationRecord) {
+    if (!medication.nextReminderAt || !medication.isActive) return
+
+    const delay = Math.max(Date.parse(medication.nextReminderAt) - Date.now(), 0)
+
+    window.setTimeout(() => {
+      this.sendReminder(medication)
+    }, delay)
+  }
+
+  sendReminder(medication: MedicationRecord) {
     if (this.mode === 'push' && 'Notification' in window) {
-      new Notification(title, { body })
+      new Notification(`Medication reminder: ${medication.name}`, {
+        body: `${medication.dosage} scheduled for ${medication.scheduleTime}`,
+      })
     }
   }
 }

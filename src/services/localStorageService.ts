@@ -38,6 +38,18 @@ function sortSymptoms(symptoms: SymptomEntry[]) {
   })
 }
 
+function sortMedications(medications: MedicationRecord[]) {
+  return [...medications].sort((left, right) => {
+    if (left.isActive !== right.isActive) return left.isActive ? -1 : 1
+
+    const nextLeft = left.nextReminderAt ? Date.parse(left.nextReminderAt) : Number.MAX_SAFE_INTEGER
+    const nextRight = right.nextReminderAt ? Date.parse(right.nextReminderAt) : Number.MAX_SAFE_INTEGER
+    if (nextLeft !== nextRight) return nextLeft - nextRight
+
+    return left.name.localeCompare(right.name)
+  })
+}
+
 export class LocalStorageService {
   saveConsent() {
     localStorage.setItem(CONSENT_KEY, 'true')
@@ -98,11 +110,25 @@ export class LocalStorageService {
     const medications = this.getMedications().filter(
       (item) => item.medId !== medication.medId,
     )
-    writeArray(MEDICATIONS_KEY, [medication, ...medications])
+    writeArray(MEDICATIONS_KEY, sortMedications([medication, ...medications]))
+  }
+
+  updateMedication(medId: string, updates: Partial<MedicationRecord>) {
+    const medications = this.getMedications().map((medication) =>
+      medication.medId === medId ? { ...medication, ...updates } : medication,
+    )
+    writeArray(MEDICATIONS_KEY, sortMedications(medications))
+  }
+
+  deleteMedication(medId: string) {
+    writeArray(
+      MEDICATIONS_KEY,
+      this.getMedications().filter((medication) => medication.medId !== medId),
+    )
   }
 
   getMedications() {
-    return readArray<MedicationRecord>(MEDICATIONS_KEY)
+    return sortMedications(readArray<MedicationRecord>(MEDICATIONS_KEY))
   }
 
   clearAll() {

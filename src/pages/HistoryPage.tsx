@@ -65,6 +65,9 @@ export function HistoryPage({ onLocalDataPurged }: { onLocalDataPurged: () => vo
               const activeSymptomCount = symptoms.filter(
                 (symptom) => symptom.sessionId === session.sessionId && symptom.severity !== 'none',
               ).length
+              const activeMedicationCount = medications.filter(
+                (medication) => medication.isActive,
+              ).length
 
               return (
                 <article
@@ -87,6 +90,12 @@ export function HistoryPage({ onLocalDataPurged }: { onLocalDataPurged: () => vo
                       <StatusBadge tone={activeSymptomCount > 0 ? 'warning' : 'neutral'}>
                         {activeSymptomCount}{' '}
                         {activeSymptomCount === 1 ? 'active symptom' : 'active symptoms'}
+                      </StatusBadge>
+                      <StatusBadge tone={activeMedicationCount > 0 ? 'success' : 'neutral'}>
+                        {activeMedicationCount}{' '}
+                        {activeMedicationCount === 1
+                          ? 'active medication'
+                          : 'active medications'}
                       </StatusBadge>
                       <Link
                         className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white hover:bg-slate-800"

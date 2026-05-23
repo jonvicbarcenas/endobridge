@@ -24,6 +24,8 @@ const validInput: LabSessionInput = {
 describe('App gates', () => {
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {
@@ -111,6 +113,37 @@ describe('App gates', () => {
     confirmSpy.mockRestore()
   })
 
+  it('shows active medication reminder context from history detail', () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    storage.saveSession(
+      createLabSession(validInput, validateLabSessionInput(validInput), {
+        'cycle-pattern': 'irregular',
+      }),
+    )
+    storage.saveMedication({
+      medId: 'med-1',
+      name: 'Metformin',
+      dosage: '500mg',
+      scheduleTime: '08:00',
+      frequency: 'daily',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      nextReminderAt: '2026-05-23T08:00:00.000Z',
+      isActive: true,
+    })
+    window.history.pushState({}, '', '/history')
+
+    render(<App />)
+
+    expect(screen.getByText('1 active medication')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('link', { name: /View details/i }))
+
+    expect(screen.getByText('Medication reminder context')).toBeTruthy()
+    expect(screen.getByText('1 active local reminder')).toBeTruthy()
+  })
+
   it('logs local symptom statuses against a selected session', () => {
     const storage = new LocalStorageService()
     storage.saveConsent()
@@ -182,5 +215,72 @@ describe('App gates', () => {
     expect(screen.getByText('Session symptoms')).toBeTruthy()
     expect(screen.getByText('Acne')).toBeTruthy()
     expect(screen.getByText('Acne increased this week.')).toBeTruthy()
+  })
+
+  it('manages local medication reminders and asks notification permission only after opt-in', async () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    const requestPermission = vi.fn().mockResolvedValue('denied')
+    vi.stubGlobal('Notification', {
+      permission: 'default',
+      requestPermission,
+    })
+    window.history.pushState({}, '', '/medications')
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+
+    expect(screen.getByText(/Medication entries are user-managed/i)).toBeTruthy()
+    expect(requestPermission).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('Medication name'), {
+      target: { value: 'Metformin' },
+    })
+    fireEvent.change(screen.getByLabelText('Dosage'), {
+      target: { value: '500mg' },
+    })
+    fireEvent.change(screen.getByLabelText('Schedule time'), {
+      target: { value: '08:00' },
+    })
+    fireEvent.change(screen.getByLabelText('Frequency'), {
+      target: { value: 'daily' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Save reminder/i }))
+
+    expect(screen.getByText('Metformin')).toBeTruthy()
+    expect(screen.getByText('500mg')).toBeTruthy()
+    expect(storage.getMedications()).toEqual([
+      expect.objectContaining({
+        name: 'Metformin',
+        dosage: '500mg',
+        scheduleTime: '08:00',
+        frequency: 'daily',
+        isActive: true,
+      }),
+    ])
+    expect(requestPermission).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: /Enable browser alerts/i }))
+
+    expect(requestPermission).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText(/Using in-app reminders/i)).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit Metformin/i }))
+    fireEvent.change(screen.getByLabelText('Dosage'), {
+      target: { value: '850mg' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Save reminder/i }))
+
+    expect(storage.getMedications()[0].dosage).toBe('850mg')
+
+    fireEvent.click(screen.getByRole('button', { name: /Pause Metformin/i }))
+
+    expect(storage.getMedications()[0].isActive).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: /Delete Metformin/i }))
+
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(storage.getMedications()).toEqual([])
   })
 })
