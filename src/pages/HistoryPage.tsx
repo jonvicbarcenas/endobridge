@@ -62,6 +62,9 @@ export function HistoryPage({ onLocalDataPurged }: { onLocalDataPurged: () => vo
               const flaggedCount = Object.values(session.biomarkers).filter(
                 (entry) => entry?.isFlagged,
               ).length
+              const activeSymptomCount = symptoms.filter(
+                (symptom) => symptom.sessionId === session.sessionId && symptom.severity !== 'none',
+              ).length
 
               return (
                 <article
@@ -80,6 +83,10 @@ export function HistoryPage({ onLocalDataPurged }: { onLocalDataPurged: () => vo
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge tone={flaggedCount > 0 ? 'warning' : 'success'}>
                         {flaggedCount} flagged
+                      </StatusBadge>
+                      <StatusBadge tone={activeSymptomCount > 0 ? 'warning' : 'neutral'}>
+                        {activeSymptomCount}{' '}
+                        {activeSymptomCount === 1 ? 'active symptom' : 'active symptoms'}
                       </StatusBadge>
                       <Link
                         className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-slate-950 px-3 text-sm font-medium text-white hover:bg-slate-800"

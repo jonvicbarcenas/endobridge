@@ -7,6 +7,7 @@ import { HistoryPage } from './pages/HistoryPage'
 import { LabEntryPage } from './pages/LabEntryPage'
 import { QuestionnairePage } from './pages/QuestionnairePage'
 import { SessionDetailPage } from './pages/SessionDetailPage'
+import { SymptomsPage } from './pages/SymptomsPage'
 
 function App() {
   const [gateResetToken, setGateResetToken] = useState(0)
@@ -20,6 +21,7 @@ function App() {
               <Route element={<AppShell />}>
                 <Route index element={<Navigate replace to="/lab" />} />
                 <Route path="/lab" element={<LabEntryPage />} />
+                <Route path="/symptoms" element={<SymptomsPage />} />
                 <Route path="/questionnaire" element={<QuestionnairePage />} />
                 <Route
                   path="/history"

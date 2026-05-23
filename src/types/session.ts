@@ -61,11 +61,20 @@ export interface LabSession {
   insightReport: InsightReport | null
 }
 
+export type SymptomKey =
+  | 'cycleIrregularity'
+  | 'acne'
+  | 'hirsutism'
+  | 'fatigue'
+  | 'weightChange'
+
+export type SymptomSeverity = 'none' | 'mild' | 'moderate' | 'severe'
+
 export interface SymptomEntry {
   entryId: string
   sessionId: string
-  symptomKey: string
-  severity: 'none' | 'mild' | 'moderate' | 'severe'
+  symptomKey: SymptomKey
+  severity: SymptomSeverity
   note: string | null
   timestamp: string
 }

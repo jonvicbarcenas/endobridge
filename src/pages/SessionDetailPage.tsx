@@ -1,8 +1,10 @@
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
+import { SymptomSeverityBadge } from '../components/SymptomSeverityBadge'
 import { Panel, StatusBadge } from '../components/ui'
 import { questionBank } from '../config/questionBank'
 import { referenceRanges } from '../config/referenceRanges'
+import { getSymptomLabel } from '../config/symptoms'
 import { InsufficientDataError, scoreSession } from '../engines/scoringEngine'
 import { LocalStorageService } from '../services/localStorageService'
 import type { SynthesisOutput } from '../types/insight'
@@ -23,6 +25,7 @@ export function SessionDetailPage() {
   const { sessionId } = useParams()
   const storage = new LocalStorageService()
   const session = sessionId ? storage.getSession(sessionId) : null
+  const symptomEntries = sessionId ? storage.getSymptomsForSession(sessionId) : []
 
   if (!session) {
     return (
@@ -126,6 +129,28 @@ export function SessionDetailPage() {
           </dl>
         ) : (
           <p className="text-sm text-slate-600">No questionnaire answers were saved.</p>
+        )}
+      </Panel>
+
+      <Panel title="Session symptoms">
+        {symptomEntries.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {symptomEntries.map((symptom) => (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={symptom.entryId}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-950">
+                    {getSymptomLabel(symptom.symptomKey)}
+                  </p>
+                  <SymptomSeverityBadge severity={symptom.severity} />
+                </div>
+                {symptom.note ? (
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{symptom.note}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">No symptom entries are linked to this session.</p>
         )}
       </Panel>
 

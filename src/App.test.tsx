@@ -110,4 +110,77 @@ describe('App gates', () => {
 
     confirmSpy.mockRestore()
   })
+
+  it('logs local symptom statuses against a selected session', () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    const session = createLabSession(validInput, validateLabSessionInput(validInput), {
+      'cycle-pattern': 'irregular',
+    })
+    storage.saveSession(session)
+    window.history.pushState({}, '', '/symptoms')
+
+    render(<App />)
+
+    expect(screen.getByText('Symptom tracker')).toBeTruthy()
+
+    fireEvent.change(screen.getByLabelText('Acne severity'), {
+      target: { value: 'moderate' },
+    })
+    fireEvent.change(screen.getByLabelText('Fatigue severity'), {
+      target: { value: 'severe' },
+    })
+    fireEvent.change(screen.getByLabelText('Fatigue note'), {
+      target: { value: 'Fatigue was worse after poor sleep.' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Save symptom log/i }))
+
+    expect(screen.getByText('Saved symptom log for the selected session.')).toBeTruthy()
+    expect(storage.getSymptomsForSession(session.sessionId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sessionId: session.sessionId,
+          symptomKey: 'acne',
+          severity: 'moderate',
+          note: null,
+        }),
+        expect.objectContaining({
+          sessionId: session.sessionId,
+          symptomKey: 'fatigue',
+          severity: 'severe',
+          note: 'Fatigue was worse after poor sleep.',
+        }),
+      ]),
+    )
+  })
+
+  it('shows session-linked symptom entries from history detail', () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    const session = createLabSession(validInput, validateLabSessionInput(validInput), {
+      'cycle-pattern': 'irregular',
+    })
+    storage.saveSession(session)
+    storage.saveSymptom({
+      entryId: 'symptom-acne',
+      sessionId: session.sessionId,
+      symptomKey: 'acne',
+      severity: 'moderate',
+      note: 'Acne increased this week.',
+      timestamp: session.timestamp,
+    })
+    window.history.pushState({}, '', '/history')
+
+    render(<App />)
+
+    expect(screen.getByText('1 active symptom')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('link', { name: /View details/i }))
+
+    expect(screen.getByText('Session symptoms')).toBeTruthy()
+    expect(screen.getByText('Acne')).toBeTruthy()
+    expect(screen.getByText('Acne increased this week.')).toBeTruthy()
+  })
 })

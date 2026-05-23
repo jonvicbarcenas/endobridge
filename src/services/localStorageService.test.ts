@@ -46,6 +46,40 @@ describe('LocalStorageService', () => {
     expect(service.getMedications()).toEqual([medication])
   })
 
+  it('replaces symptom statuses by session and symptom key while keeping newest entries first', () => {
+    const service = new LocalStorageService()
+    const olderAcne = {
+      entryId: 'older-acne',
+      sessionId: 'session-1',
+      symptomKey: 'acne',
+      severity: 'mild',
+      note: 'Initial acne note',
+      timestamp: '2026-05-21T00:00:00.000Z',
+    } as SymptomEntry
+    const updatedAcne = {
+      entryId: 'updated-acne',
+      sessionId: 'session-1',
+      symptomKey: 'acne',
+      severity: 'severe',
+      note: 'Updated acne note',
+      timestamp: '2026-05-22T00:00:00.000Z',
+    } as SymptomEntry
+    const fatigue = {
+      entryId: 'fatigue',
+      sessionId: 'session-1',
+      symptomKey: 'fatigue',
+      severity: 'moderate',
+      note: null,
+      timestamp: '2026-05-22T00:00:00.000Z',
+    } as SymptomEntry
+
+    service.saveSymptom(olderAcne)
+    service.saveSymptomsForSession('session-1', [updatedAcne, fatigue])
+
+    expect(service.getSymptomsForSession('session-1')).toEqual([updatedAcne, fatigue])
+    expect(service.getAllSymptoms()).toEqual([updatedAcne, fatigue])
+  })
+
   it('stores consent and age eligibility flags', () => {
     const service = new LocalStorageService()
 

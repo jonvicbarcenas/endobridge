@@ -1,10 +1,10 @@
 # EndoBridge Project Tracker
 
-Last updated: 2026-05-22
+Last updated: 2026-05-23
 
 ## Current Phase
 
-Local-first MVP flow complete; next phase should target symptom tracking, medication reminder UI, or the Gemini report slice.
+Symptom tracker local-first slice complete; next phase should target medication reminder UI or the Gemini report slice.
 
 ## Completed
 
@@ -42,6 +42,13 @@ Local-first MVP flow complete; next phase should target symptom tracking, medica
 - [x] Verified `npm run lint`
 - [x] Verified `npm run build`
 - [x] Started local dev server at `http://127.0.0.1:5173`
+- [x] Added `/symptoms` route and primary navigation item
+- [x] Added local-first symptom tracker UI for cycle irregularity, acne, hirsutism, fatigue, weight change, and per-symptom notes
+- [x] Added LocalStorageService symptom upsert/sorting support
+- [x] Added deterministic symptom trend summary helper for future Gemini payload context
+- [x] Linked symptom counts and entries into history and session detail views
+- [x] Added focused tests for symptom storage, trend summary, route interaction, and session-linked display
+- [x] Verified browser smoke for consent, lab entry, questionnaire, symptom log, history, and detail flow
 
 ## In Progress
 
@@ -49,11 +56,11 @@ Local-first MVP flow complete; next phase should target symptom tracking, medica
 
 ## Next
 
-1. Add symptom tracker UI.
-2. Add medication reminder management UI.
-3. Wire the real Gemini API call inside `api/generate-insight.ts`.
-4. Add Gemini response parser and safety rejection handling.
-5. Add insight report screen with mandatory disclaimer and distress note.
+1. Add medication reminder management UI.
+2. Wire the real Gemini API call inside `api/generate-insight.ts`.
+3. Add Gemini response parser and safety rejection handling.
+4. Add insight report screen with mandatory disclaimer and distress note.
+5. Add print/share report workflow.
 
 ## Later
 
@@ -94,6 +101,10 @@ Local-first MVP flow complete; next phase should target symptom tracking, medica
 | 2026-05-22 | `npm run lint` | Passed |
 | 2026-05-22 | `npm run build` | Passed |
 | 2026-05-22 | Browser smoke at `http://127.0.0.1:5173` | Passed: consent, age rejection, adult gate, lab submit, questionnaire save, detail/history, purge |
+| 2026-05-23 | `npm test` | Passed: 8 files, 19 tests |
+| 2026-05-23 | `npm run lint` | Passed |
+| 2026-05-23 | `npm run build` | Passed |
+| 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chrome | Passed: consent, lab submit, questionnaire save, symptom log, history/detail symptom display |
 
 ## Completion Estimate
 
@@ -108,7 +119,7 @@ Local-first MVP flow complete; next phase should target symptom tracking, medica
 | Lab entry UI | Complete local-first flow |
 | Consent/age gate | Complete |
 | Questionnaire capture | Complete |
-| Symptom tracker | Not started |
+| Symptom tracker | Complete local-first flow with trend summary helper |
 | Medication reminders | Service scaffold only |
 | Session history | Complete local-first history/detail/purge flow |
 | Gemini proxy | Boundary scaffold only |
