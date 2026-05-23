@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildGeminiRequest,
+  callGemini,
   extractGeminiText,
   isRateLimited,
   parseGeminiReport,
@@ -40,6 +41,8 @@ const synthesis: SynthesisOutput = {
 describe('Gemini insight proxy helpers', () => {
   afterEach(() => {
     resetRateLimitForTests()
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   it('accepts only the minimized synthesis envelope and rejects medication detail keys', () => {
@@ -143,5 +146,23 @@ describe('Gemini insight proxy helpers', () => {
     expect(isRateLimited('client-1', now + 5)).toBe(true)
     expect(isRateLimited('client-2', now + 5)).toBe(false)
     expect(isRateLimited('client-1', now + 60_001)).toBe(false)
+  })
+
+  it('uses the responsive default model and aborts stalled Gemini requests before Vercel timeout', async () => {
+    vi.stubEnv('GEMINI_API_KEY', 'test-key')
+    const transport = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      data: { error: { status: 'INTERNAL' } },
+    })
+
+    await expect(callGemini(synthesis, transport)).rejects.toThrow(
+      /Gemini API request failed/i,
+    )
+
+    const [url, request, timeoutMs] = transport.mock.calls[0]
+    expect(String(url)).toContain('/models/gemini-3.1-flash-lite:generateContent')
+    expect(JSON.stringify(request)).toContain('strictly observational')
+    expect(timeoutMs).toBeLessThan(30_000)
   })
 })

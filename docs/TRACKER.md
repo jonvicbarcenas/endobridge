@@ -68,6 +68,8 @@ Gemini insight report slice complete; next phase should target deployment config
 - [x] Added report display with hard-coded non-diagnosis disclaimer and DOH-NCMH distress note
 - [x] Added print/share report controls
 - [x] Added focused tests for Gemini proxy helpers, proxy client errors, longitudinal context, and report UI
+- [x] Stabilized `vercel dev` Gemini reports by switching the local model default to `gemini-3.1-flash-lite`
+- [x] Replaced serverless outbound Gemini `fetch` with a bounded `node:https` request to avoid Windows Vercel worker crashes
 
 ## In Progress
 
@@ -131,6 +133,12 @@ Gemini insight report slice complete; next phase should target deployment config
 | 2026-05-23 | `npm run lint` | Passed |
 | 2026-05-23 | `npm run build` | Passed |
 | 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chromium | Passed: session detail Gemini report generation, disclaimer, distress note, local storage, and medication exclusion |
+| 2026-05-23 | `npm test -- api/generate-insight.test.ts` | Passed: 1 file, 6 tests |
+| 2026-05-23 | API smoke at `http://127.0.0.1:3002/api/generate-insight` using `vercel dev` | Passed: real Gemini report response |
+| 2026-05-23 | Browser smoke at `http://127.0.0.1:3002` using `vercel dev` and real Gemini | Passed: insight report generation and local storage |
+| 2026-05-23 | `npm test` | Passed: 9 files, 31 tests |
+| 2026-05-23 | `npm run lint` | Passed |
+| 2026-05-23 | `npm run build` | Passed |
 
 ## Completion Estimate
 

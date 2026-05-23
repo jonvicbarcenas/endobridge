@@ -33,7 +33,7 @@ async function readProxyError(response: Response) {
 
 export async function generateInsight(synthesis: SynthesisOutput): Promise<InsightReport> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 30_000)
+  const timeout = window.setTimeout(() => controller.abort(), 60_000)
 
   try {
     const response = await fetch('/api/generate-insight', {

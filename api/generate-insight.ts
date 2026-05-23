@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { request as httpsRequest } from 'node:https'
 import { referenceRanges } from '../src/config/referenceRanges'
 import type {
   Contributor,
@@ -16,8 +17,9 @@ const REQUIRED_KEYS: Array<keyof SynthesisOutput> = [
 ]
 
 const ALLOWED_SYNTHESIS_KEYS = new Set(REQUIRED_KEYS)
-const DEFAULT_GEMINI_MODEL = 'models/gemma-4-26b-a4b-it'
+const DEFAULT_GEMINI_MODEL = 'models/gemini-3.1-flash-lite'
 const MAX_OUTPUT_TOKENS = 900
+const GEMINI_REQUEST_TIMEOUT_MS = 20_000
 const RATE_LIMIT_MAX_REQUESTS = 5
 const RATE_LIMIT_WINDOW_MS = 60_000
 const UNSAFE_OUTPUT_REJECTED = 'UNSAFE_OUTPUT_REJECTED'
@@ -35,6 +37,22 @@ export class UnsafeGeminiOutputError extends Error {
 }
 
 class GeminiApiError extends Error {}
+
+type RequestWithOptionalBody = IncomingMessage & {
+  body?: unknown
+}
+
+export interface GeminiHttpResponse {
+  ok: boolean
+  status: number
+  data: unknown
+}
+
+export type GeminiTransport = (
+  endpoint: URL,
+  body: unknown,
+  timeoutMs: number,
+) => Promise<GeminiHttpResponse>
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -139,6 +157,52 @@ function unsafeTextPatterns() {
   ]
 }
 
+export function postJson(
+  endpoint: URL,
+  body: unknown,
+  timeoutMs: number,
+): Promise<GeminiHttpResponse> {
+  const requestBody = JSON.stringify(body)
+
+  return new Promise((resolve, reject) => {
+    const req = httpsRequest(
+      endpoint,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody),
+        },
+      },
+      (response) => {
+        let responseBody = ''
+
+        response.setEncoding('utf8')
+        response.on('data', (chunk) => {
+          responseBody += chunk
+        })
+        response.on('end', () => {
+          try {
+            resolve({
+              ok: response.statusCode ? response.statusCode >= 200 && response.statusCode < 300 : false,
+              status: response.statusCode ?? 0,
+              data: responseBody ? JSON.parse(responseBody) : null,
+            })
+          } catch (error) {
+            reject(error)
+          }
+        })
+      },
+    )
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new GeminiApiError('Gemini API request timed out'))
+    })
+    req.on('error', reject)
+    req.end(requestBody)
+  })
+}
+
 export function validateSynthesisPayload(body: unknown): { synthesis: SynthesisOutput } {
   if (!isPlainObject(body) || Object.keys(body).length !== 1 || !('synthesis' in body)) {
     throw new PayloadValidationError('invalid synthesis payload')
@@ -157,7 +221,7 @@ export function validateSynthesisPayload(body: unknown): { synthesis: SynthesisO
 
   const missing = REQUIRED_KEYS.find((key) => !(key in synthesis))
   if (missing) {
-    throw new PayloadValidationError(`missing synthesis field: ${missing}`)
+    throw new PayloadValidationError(`missing synthesis field: ${String(missing)}`)
   }
 
   if (
@@ -258,7 +322,12 @@ export function extractGeminiText(response: unknown) {
   }
 
   const text = parts
-    .map((part) => (isPlainObject(part) && typeof part.text === 'string' ? part.text : ''))
+    .map((part) => {
+      if (isPlainObject(part) && (part.thought === true || 'thought' in part)) {
+        return ''
+      }
+      return isPlainObject(part) && typeof part.text === 'string' ? part.text : ''
+    })
     .join('')
     .trim()
 
@@ -295,25 +364,35 @@ export function parseGeminiReport(rawText: string, synthesis: SynthesisOutput): 
   }
 }
 
-async function callGemini(synthesis: SynthesisOutput) {
+export async function callGemini(
+  synthesis: SynthesisOutput,
+  transport: GeminiTransport = postJson,
+) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new GeminiApiError('insight generation is not configured')
   }
 
   const model = normalizeModelName(process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL)
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildGeminiRequest(synthesis)),
-  })
+  const endpoint = new URL(
+    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+  )
 
-  if (!response.ok) {
+  try {
+    const response = await transport(endpoint, buildGeminiRequest(synthesis), GEMINI_REQUEST_TIMEOUT_MS)
+
+    if (!response.ok) {
+      throw new GeminiApiError('Gemini API request failed')
+    }
+
+    return extractGeminiText(response.data)
+  } catch (error) {
+    if (error instanceof GeminiApiError) {
+      throw error
+    }
+
     throw new GeminiApiError('Gemini API request failed')
   }
-
-  return extractGeminiText(await response.json())
 }
 
 function readBody(req: IncomingMessage) {
@@ -348,10 +427,26 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
   }
 
   try {
-    const { synthesis } = validateSynthesisPayload(JSON.parse(await readBody(req)))
+    let bodyObj: unknown
+    const requestWithBody = req as RequestWithOptionalBody
+    if (requestWithBody.body !== undefined) {
+      bodyObj =
+        typeof requestWithBody.body === 'string'
+          ? JSON.parse(requestWithBody.body)
+          : requestWithBody.body
+    } else {
+      bodyObj = JSON.parse(await readBody(req))
+    }
+
+    const { synthesis } = validateSynthesisPayload(bodyObj)
     const rawReport = await callGemini(synthesis)
     sendJson(res, 200, parseGeminiReport(rawReport, synthesis))
   } catch (error) {
+    console.error(
+      '[generate-insight]',
+      error instanceof Error ? `${error.name}: ${error.message}` : 'Unknown error',
+    )
+
     if (error instanceof PayloadValidationError || error instanceof SyntaxError) {
       sendJson(res, 400, { error: 'invalid request' })
       return
