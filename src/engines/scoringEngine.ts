@@ -1,12 +1,18 @@
 import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
+import { buildLongitudinalSummary } from './longitudinalSummaryEngine'
 import type { SynthesisOutput } from '../types/insight'
-import type { BiomarkerKey, LabSession } from '../types/session'
+import type { BiomarkerKey, LabSession, SymptomEntry } from '../types/session'
 
 export class InsufficientDataError extends Error {
   constructor(message = 'mandatory biomarker data is incomplete') {
     super(message)
     this.name = 'InsufficientDataError'
   }
+}
+
+interface ScoreSessionContext {
+  sessions?: LabSession[]
+  symptoms?: SymptomEntry[]
 }
 
 function deviationScore(key: BiomarkerKey, value: number) {
@@ -17,7 +23,7 @@ function deviationScore(key: BiomarkerKey, value: number) {
   return Number((Math.abs(value - midpoint) / width).toFixed(4))
 }
 
-export function scoreSession(session: LabSession): SynthesisOutput {
+export function scoreSession(session: LabSession, context: ScoreSessionContext = {}): SynthesisOutput {
   const missing = mandatoryBiomarkers.filter((key) => !session.biomarkers[key])
 
   if (missing.length > 0) {
@@ -45,7 +51,7 @@ export function scoreSession(session: LabSession): SynthesisOutput {
     .map((item, index) => ({
       rank: index + 1,
       key: item.key,
-      weight: item.deviationScore,
+      weight: [0.5, 0.33, 0.17][index],
     }))
 
   return {
@@ -53,8 +59,10 @@ export function scoreSession(session: LabSession): SynthesisOutput {
     flaggedBiomarkers,
     topContributors,
     questionnaireContext: session.questionnaire ?? {},
-    longitudinalSummary: {
-      priorSessionCount: 0,
-    },
+    longitudinalSummary: buildLongitudinalSummary(
+      session,
+      context.sessions ?? [session],
+      context.symptoms ?? [],
+    ),
   }
 }

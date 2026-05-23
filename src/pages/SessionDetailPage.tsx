@@ -1,12 +1,19 @@
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowLeft, AlertTriangle, Sparkles } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
+import { InsightReport } from '../components/InsightReport'
 import { SymptomSeverityBadge } from '../components/SymptomSeverityBadge'
-import { Panel, StatusBadge } from '../components/ui'
+import { Panel, PrimaryButton, StatusBadge } from '../components/ui'
 import { questionBank } from '../config/questionBank'
 import { referenceRanges } from '../config/referenceRanges'
 import { getSymptomLabel } from '../config/symptoms'
 import { InsufficientDataError, scoreSession } from '../engines/scoringEngine'
 import { LocalStorageService } from '../services/localStorageService'
+import {
+  InsightServiceUnavailableError,
+  UnsafeInsightError,
+  generateInsight,
+} from '../services/proxyClient'
 import type { SynthesisOutput } from '../types/insight'
 import type { BiomarkerEntry, BiomarkerKey } from '../types/session'
 
@@ -24,7 +31,9 @@ function questionLabel(questionId: string) {
 export function SessionDetailPage() {
   const { sessionId } = useParams()
   const storage = new LocalStorageService()
-  const session = sessionId ? storage.getSession(sessionId) : null
+  const [session, setSession] = useState(() => (sessionId ? storage.getSession(sessionId) : null))
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
   const symptomEntries = sessionId ? storage.getSymptomsForSession(sessionId) : []
   const activeMedications = storage.getMedications().filter((medication) => medication.isActive)
 
@@ -53,9 +62,38 @@ export function SessionDetailPage() {
   let contributorError: 'insufficient' | 'unknown' | null = null
 
   try {
-    synthesis = scoreSession(session)
+    synthesis = scoreSession(session, {
+      sessions: storage.getAllSessions(),
+      symptoms: storage.getAllSymptoms(),
+    })
   } catch (error) {
     contributorError = error instanceof InsufficientDataError ? 'insufficient' : 'unknown'
+  }
+
+  async function handleGenerateInsight() {
+    if (!session || !synthesis || isGeneratingReport) return
+
+    setIsGeneratingReport(true)
+    setReportError(null)
+
+    try {
+      const insightReport = await generateInsight(synthesis)
+      const updatedSession = { ...session, insightReport }
+      storage.saveSession(updatedSession)
+      setSession(updatedSession)
+    } catch (error) {
+      if (error instanceof UnsafeInsightError) {
+        setReportError(
+          'The generated report was blocked because it did not stay within EndoBridge safety limits. Please retry later.',
+        )
+      } else if (error instanceof InsightServiceUnavailableError) {
+        setReportError('Insight generation is temporarily unavailable. Please retry later.')
+      } else {
+        setReportError('Insight report could not be generated safely. Please retry later.')
+      }
+    } finally {
+      setIsGeneratingReport(false)
+    }
   }
 
   return (
@@ -189,6 +227,40 @@ export function SessionDetailPage() {
         ) : (
           <p className="text-sm text-slate-600">No out-of-range contributors for this session.</p>
         )}
+      </Panel>
+
+      <Panel title="Gemini insight report">
+        <div className="space-y-4">
+          <p className="text-sm leading-6 text-slate-600">
+            Generates a bounded observational report through the serverless proxy. Medication
+            reminder names, dosage labels, and schedules remain local and are not sent.
+          </p>
+
+          <PrimaryButton
+            disabled={isGeneratingReport || contributorError !== null}
+            onClick={handleGenerateInsight}
+          >
+            <Sparkles size={17} />
+            {isGeneratingReport
+              ? 'Generating insight report...'
+              : session.insightReport
+                ? 'Regenerate insight report'
+                : 'Generate insight report'}
+          </PrimaryButton>
+
+          {reportError ? (
+            <div className="flex gap-2 rounded-md bg-rose-50 p-3 text-sm text-rose-800">
+              <AlertTriangle className="mt-0.5 shrink-0" size={17} />
+              {reportError}
+            </div>
+          ) : null}
+
+          {session.insightReport ? (
+            <InsightReport report={session.insightReport} session={session} />
+          ) : (
+            <p className="text-sm text-slate-600">No AI insight report is stored for this session.</p>
+          )}
+        </div>
       </Panel>
     </section>
   )

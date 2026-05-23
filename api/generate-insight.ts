@@ -1,12 +1,320 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { referenceRanges } from '../src/config/referenceRanges'
+import type {
+  Contributor,
+  InsightReport,
+  ReportContributor,
+  SynthesisOutput,
+} from '../src/types/insight'
 
-const REQUIRED_KEYS = [
+const REQUIRED_KEYS: Array<keyof SynthesisOutput> = [
   'sessionId',
   'flaggedBiomarkers',
   'topContributors',
   'questionnaireContext',
   'longitudinalSummary',
 ]
+
+const ALLOWED_SYNTHESIS_KEYS = new Set(REQUIRED_KEYS)
+const DEFAULT_GEMINI_MODEL = 'models/gemma-4-26b-a4b-it'
+const MAX_OUTPUT_TOKENS = 900
+const RATE_LIMIT_MAX_REQUESTS = 5
+const RATE_LIMIT_WINDOW_MS = 60_000
+const UNSAFE_OUTPUT_REJECTED = 'UNSAFE_OUTPUT_REJECTED'
+const PROHIBITED_FIELD_PATTERN =
+  /^(medication|medications|medId|dosage|scheduleTime|nextReminderAt|lastTakenAt|isActive)$/i
+const rateLimitBuckets = new Map<string, number[]>()
+
+class PayloadValidationError extends Error {}
+
+export class UnsafeGeminiOutputError extends Error {
+  constructor(message = 'unsafe Gemini output rejected') {
+    super(message)
+    this.name = 'UnsafeGeminiOutputError'
+  }
+}
+
+class GeminiApiError extends Error {}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function assertNoProhibitedFields(value: unknown) {
+  if (Array.isArray(value)) {
+    value.forEach(assertNoProhibitedFields)
+    return
+  }
+
+  if (!isPlainObject(value)) return
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (PROHIBITED_FIELD_PATTERN.test(key)) {
+      throw new PayloadValidationError(`unexpected field: ${key}`)
+    }
+    assertNoProhibitedFields(nestedValue)
+  }
+}
+
+function normalizeModelName(model: string) {
+  return model.startsWith('models/') ? model : `models/${model}`
+}
+
+function clientKey(req: IncomingMessage) {
+  const forwardedFor = req.headers['x-forwarded-for']
+  if (Array.isArray(forwardedFor)) return forwardedFor[0] ?? 'anonymous'
+  if (forwardedFor) return forwardedFor.split(',')[0].trim()
+  return req.socket.remoteAddress ?? 'anonymous'
+}
+
+export function resetRateLimitForTests() {
+  rateLimitBuckets.clear()
+}
+
+export function isRateLimited(key: string, now = Date.now()) {
+  const recent = (rateLimitBuckets.get(key) ?? []).filter(
+    (timestamp) => now - timestamp <= RATE_LIMIT_WINDOW_MS,
+  )
+
+  if (recent.length >= RATE_LIMIT_MAX_REQUESTS) {
+    rateLimitBuckets.set(key, recent)
+    return true
+  }
+
+  rateLimitBuckets.set(key, [...recent, now])
+  return false
+}
+
+function stripJsonFence(text: string) {
+  return text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+}
+
+function assertStringArray(value: unknown): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error('malformed Gemini observations')
+  }
+
+  return value
+}
+
+function findFlaggedBiomarker(synthesis: SynthesisOutput, contributor: Contributor) {
+  return synthesis.flaggedBiomarkers.find((biomarker) => biomarker.key === contributor.key) ?? null
+}
+
+function buildReportContributors(synthesis: SynthesisOutput): ReportContributor[] {
+  return synthesis.topContributors.map((contributor) => {
+    const biomarker = findFlaggedBiomarker(synthesis, contributor)
+
+    if (!biomarker || biomarker.direction === 'normal') {
+      throw new Error('malformed contributor payload')
+    }
+
+    return {
+      ...contributor,
+      biomarkerLabel: referenceRanges[contributor.key].label,
+      value: biomarker.value,
+      unit: biomarker.unit,
+      direction: biomarker.direction,
+    }
+  })
+}
+
+function unsafeTextPatterns() {
+  return [
+    /\bdiagnos(?:e|is|ed|ing)\b/i,
+    /\byou have\b/i,
+    /\bdoes not have\b/i,
+    /\bpositive for\b/i,
+    /\bnegative for\b/i,
+    /\bprescrib(?:e|ed|ing)\b/i,
+    /\btreatment\b/i,
+    /\bmedication\b/i,
+    /\bmetformin\b/i,
+    /\bdosage\b/i,
+    /\bconsult (?:a|your) (?:doctor|physician|clinician)\b/i,
+  ]
+}
+
+export function validateSynthesisPayload(body: unknown): { synthesis: SynthesisOutput } {
+  if (!isPlainObject(body) || Object.keys(body).length !== 1 || !('synthesis' in body)) {
+    throw new PayloadValidationError('invalid synthesis payload')
+  }
+
+  const synthesis = body.synthesis
+  if (!isPlainObject(synthesis)) {
+    throw new PayloadValidationError('invalid synthesis payload')
+  }
+
+  for (const key of Object.keys(synthesis)) {
+    if (!ALLOWED_SYNTHESIS_KEYS.has(key as keyof SynthesisOutput)) {
+      throw new PayloadValidationError(`unexpected field: ${key}`)
+    }
+  }
+
+  const missing = REQUIRED_KEYS.find((key) => !(key in synthesis))
+  if (missing) {
+    throw new PayloadValidationError(`missing synthesis field: ${missing}`)
+  }
+
+  if (
+    typeof synthesis.sessionId !== 'string' ||
+    !Array.isArray(synthesis.flaggedBiomarkers) ||
+    !Array.isArray(synthesis.topContributors) ||
+    !isPlainObject(synthesis.questionnaireContext) ||
+    !isPlainObject(synthesis.longitudinalSummary)
+  ) {
+    throw new PayloadValidationError('invalid synthesis payload')
+  }
+
+  assertNoProhibitedFields(synthesis)
+
+  return { synthesis: synthesis as unknown as SynthesisOutput }
+}
+
+export function buildGeminiRequest(synthesis: SynthesisOutput) {
+  return {
+    systemInstruction: {
+      parts: [
+        {
+          text:
+            'You create EndoBridge PCOS monitoring reports from structured data only. ' +
+            'Use strictly observational language. Do not diagnose, prescribe, give treatment plans, ' +
+            'or provide lifestyle instructions. Do not state that a user has, does not have, is clear of, ' +
+            'is positive for, or is negative for PCOS. Return JSON only.',
+        },
+      ],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: JSON.stringify({
+              synthesis,
+              responseContract: {
+                observationalSummary:
+                  'Two to four short paragraphs describing patterns in submitted values only.',
+                observations: 'One to four short observational bullets.',
+              },
+            }),
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'object',
+        properties: {
+          observationalSummary: { type: 'string' },
+          observations: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        required: ['observationalSummary', 'observations'],
+      },
+    },
+    safetySettings: [
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold: 'BLOCK_MEDIUM_AND_ABOVE',
+      },
+    ],
+  }
+}
+
+export function extractGeminiText(response: unknown) {
+  if (!isPlainObject(response) || !Array.isArray(response.candidates)) {
+    throw new Error('malformed Gemini response')
+  }
+
+  const candidate = response.candidates[0]
+  if (!isPlainObject(candidate) || !isPlainObject(candidate.content)) {
+    throw new Error('malformed Gemini response')
+  }
+
+  const parts = candidate.content.parts
+  if (!Array.isArray(parts)) {
+    throw new Error('malformed Gemini response')
+  }
+
+  const text = parts
+    .map((part) => (isPlainObject(part) && typeof part.text === 'string' ? part.text : ''))
+    .join('')
+    .trim()
+
+  if (!text) {
+    throw new Error('empty Gemini response')
+  }
+
+  return text
+}
+
+export function parseGeminiReport(rawText: string, synthesis: SynthesisOutput): InsightReport {
+  if (rawText.length > 8_000) {
+    throw new Error('Gemini response exceeded report bounds')
+  }
+
+  const parsed = JSON.parse(stripJsonFence(rawText))
+
+  if (!isPlainObject(parsed) || typeof parsed.observationalSummary !== 'string') {
+    throw new Error('malformed Gemini report')
+  }
+
+  const observations = assertStringArray(parsed.observations)
+  const generatedText = [parsed.observationalSummary, ...observations].join('\n')
+
+  if (unsafeTextPatterns().some((pattern) => pattern.test(generatedText))) {
+    throw new UnsafeGeminiOutputError()
+  }
+
+  return {
+    observationalSummary: parsed.observationalSummary.trim(),
+    observations: observations.map((item) => item.trim()).filter(Boolean).slice(0, 4),
+    contributors: buildReportContributors(synthesis),
+    reportTimestamp: new Date().toISOString(),
+  }
+}
+
+async function callGemini(synthesis: SynthesisOutput) {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new GeminiApiError('insight generation is not configured')
+  }
+
+  const model = normalizeModelName(process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL)
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildGeminiRequest(synthesis)),
+  })
+
+  if (!response.ok) {
+    throw new GeminiApiError('Gemini API request failed')
+  }
+
+  return extractGeminiText(await response.json())
+}
 
 function readBody(req: IncomingMessage) {
   return new Promise<string>((resolve, reject) => {
@@ -34,24 +342,36 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return
   }
 
+  if (isRateLimited(clientKey(req))) {
+    sendJson(res, 429, { error: 'too many insight generation requests' })
+    return
+  }
+
   try {
-    const body = JSON.parse(await readBody(req))
-    const synthesis = body?.synthesis
-
-    if (!synthesis || REQUIRED_KEYS.some((key) => !(key in synthesis))) {
-      sendJson(res, 400, { error: 'invalid synthesis payload' })
+    const { synthesis } = validateSynthesisPayload(JSON.parse(await readBody(req)))
+    const rawReport = await callGemini(synthesis)
+    sendJson(res, 200, parseGeminiReport(rawReport, synthesis))
+  } catch (error) {
+    if (error instanceof PayloadValidationError || error instanceof SyntaxError) {
+      sendJson(res, 400, { error: 'invalid request' })
       return
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      sendJson(res, 503, { error: 'insight generation is not configured' })
+    if (error instanceof UnsafeGeminiOutputError) {
+      sendJson(res, 422, { error: UNSAFE_OUTPUT_REJECTED })
       return
     }
 
-    sendJson(res, 501, {
-      error: 'Gemini integration boundary is scaffolded; model call is not implemented yet.',
-    })
-  } catch {
-    sendJson(res, 400, { error: 'invalid request' })
+    if (error instanceof GeminiApiError) {
+      sendJson(res, 503, { error: 'insight generation is temporarily unavailable' })
+      return
+    }
+
+    if (error instanceof Error && error.message === 'payload too large') {
+      sendJson(res, 413, { error: 'payload too large' })
+      return
+    }
+
+    sendJson(res, 500, { error: 'insight report could not be generated safely' })
   }
 }

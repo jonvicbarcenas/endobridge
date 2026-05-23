@@ -28,8 +28,70 @@ describe('scoreSession', () => {
 
     expect(synthesis.topContributors).toHaveLength(3)
     expect(synthesis.topContributors.map((item) => item.rank)).toEqual([1, 2, 3])
+    expect(synthesis.topContributors.map((item) => item.weight)).toEqual([0.5, 0.33, 0.17])
     expect(synthesis.topContributors[0].weight).toBeGreaterThanOrEqual(
       synthesis.topContributors[1].weight,
+    )
+  })
+
+  it('includes prior biomarker and symptom trend summaries for Gemini context', () => {
+    const previousValidation = validateLabSessionInput({
+      ...input,
+      biomarkers: {
+        ...input.biomarkers,
+        ldlC: { value: 140, unit: 'mg/dL' },
+      },
+    })
+    const currentValidation = validateLabSessionInput(input)
+    const previous = createLabSession(input, previousValidation)
+    const current = createLabSession(input, currentValidation)
+    previous.sessionId = 'previous-session'
+    current.sessionId = 'current-session'
+    previous.timestamp = '2026-05-01T00:00:00.000Z'
+    current.timestamp = '2026-05-23T00:00:00.000Z'
+
+    const synthesis = scoreSession(current, {
+      sessions: [current, previous],
+      symptoms: [
+        {
+          entryId: 'previous-acne',
+          sessionId: previous.sessionId,
+          symptomKey: 'acne',
+          severity: 'mild',
+          note: null,
+          timestamp: previous.timestamp,
+        },
+        {
+          entryId: 'current-acne',
+          sessionId: current.sessionId,
+          symptomKey: 'acne',
+          severity: 'severe',
+          note: null,
+          timestamp: current.timestamp,
+        },
+      ],
+    })
+
+    expect(synthesis.longitudinalSummary).toEqual(
+      expect.objectContaining({
+        priorSessionCount: 1,
+        biomarkerTrends: expect.arrayContaining([
+          expect.objectContaining({
+            key: 'ldlC',
+            previousValue: 140,
+            currentValue: 180,
+            trendLabel: 'increased',
+          }),
+        ]),
+        symptomTrends: expect.arrayContaining([
+          expect.objectContaining({
+            symptomKey: 'acne',
+            previousSeverity: 'mild',
+            currentSeverity: 'severe',
+            trendLabel: 'increased',
+          }),
+        ]),
+      }),
     )
   })
 

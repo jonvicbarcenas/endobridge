@@ -4,8 +4,31 @@ export interface GeminiProxyPayload {
   synthesis: SynthesisOutput
 }
 
+export class InsightServiceUnavailableError extends Error {
+  constructor(message = 'insight generation is temporarily unavailable') {
+    super(message)
+    this.name = 'InsightServiceUnavailableError'
+  }
+}
+
+export class UnsafeInsightError extends Error {
+  constructor(message = 'Gemini output was rejected by safety validation') {
+    super(message)
+    this.name = 'UnsafeInsightError'
+  }
+}
+
 export function buildGeminiPayload(synthesis: SynthesisOutput): GeminiProxyPayload {
   return { synthesis }
+}
+
+async function readProxyError(response: Response) {
+  try {
+    const body = (await response.json()) as { error?: string }
+    return body.error ?? ''
+  } catch {
+    return ''
+  }
 }
 
 export async function generateInsight(synthesis: SynthesisOutput): Promise<InsightReport> {
@@ -21,10 +44,20 @@ export async function generateInsight(synthesis: SynthesisOutput): Promise<Insig
     })
 
     if (!response.ok) {
-      throw new Error('insight generation is temporarily unavailable')
+      const error = await readProxyError(response)
+      if (response.status === 422 || error === 'UNSAFE_OUTPUT_REJECTED') {
+        throw new UnsafeInsightError()
+      }
+      throw new InsightServiceUnavailableError()
     }
 
     return (await response.json()) as InsightReport
+  } catch (error) {
+    if (error instanceof UnsafeInsightError || error instanceof InsightServiceUnavailableError) {
+      throw error
+    }
+
+    throw new InsightServiceUnavailableError()
   } finally {
     window.clearTimeout(timeout)
   }

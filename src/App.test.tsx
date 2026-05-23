@@ -144,6 +144,65 @@ describe('App gates', () => {
     expect(screen.getByText('1 active local reminder')).toBeTruthy()
   })
 
+  it('generates and stores a local insight report from the session detail page', async () => {
+    const storage = new LocalStorageService()
+    storage.saveConsent()
+    storage.saveAgeEligibility()
+    const session = createLabSession(validInput, validateLabSessionInput(validInput), {
+      'cycle-pattern': 'irregular',
+    })
+    storage.saveSession(session)
+    storage.saveMedication({
+      medId: 'med-1',
+      name: 'Metformin',
+      dosage: '500mg',
+      scheduleTime: '08:00',
+      frequency: 'daily',
+      createdAt: '2026-05-23T00:00:00.000Z',
+      nextReminderAt: '2026-05-23T08:00:00.000Z',
+      isActive: true,
+    })
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          observationalSummary:
+            'Several submitted biomarkers were above their reference ranges in this session.',
+          observations: ['LDL cholesterol and AMH were both flagged above range.'],
+          contributors: [],
+          reportTimestamp: '2026-05-23T01:02:03.000Z',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    )
+    const printSpy = vi.spyOn(window, 'print').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', fetchMock)
+    window.history.pushState({}, '', `/history/${session.sessionId}`)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate insight report/i }))
+
+    expect(await screen.findByText('Insight report')).toBeTruthy()
+    expect(screen.getByText(/Several submitted biomarkers/i)).toBeTruthy()
+    expect(screen.getByText(/This output does not constitute a clinical diagnosis/i)).toBeTruthy()
+    expect(screen.getByText(/DOH-NCMH Crisis Hotline/i)).toBeTruthy()
+    expect(JSON.stringify(fetchMock.mock.calls[0][1])).not.toMatch(/Metformin|dosage|scheduleTime/i)
+
+    fireEvent.click(screen.getByRole('button', { name: /Print report/i }))
+
+    expect(printSpy).toHaveBeenCalled()
+    expect(storage.getSession(session.sessionId)?.insightReport).toEqual(
+      expect.objectContaining({
+        observationalSummary:
+          'Several submitted biomarkers were above their reference ranges in this session.',
+        reportTimestamp: '2026-05-23T01:02:03.000Z',
+      }),
+    )
+  })
+
   it('logs local symptom statuses against a selected session', () => {
     const storage = new LocalStorageService()
     storage.saveConsent()

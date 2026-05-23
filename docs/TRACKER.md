@@ -4,7 +4,7 @@ Last updated: 2026-05-23
 
 ## Current Phase
 
-Medication reminder local-first slice complete; next phase should target the Gemini report slice.
+Gemini insight report slice complete; next phase should target deployment configuration and local backup/restore hardening.
 
 ## Completed
 
@@ -57,22 +57,32 @@ Medication reminder local-first slice complete; next phase should target the Gem
 - [x] Added LocalStorageService medication update/delete support
 - [x] Linked active medication reminder context into history and session detail views
 - [x] Added focused tests for medication storage and route interaction
+- [x] Added deterministic biomarker longitudinal summary context for Gemini payloads
+- [x] Updated contributor weights to deterministic rank-based values
+- [x] Wired `api/generate-insight.ts` to call Gemini through the serverless proxy boundary
+- [x] Added strict synthesis payload validation and medication-detail rejection in the proxy
+- [x] Added best-effort in-memory rate limiting in the serverless proxy boundary
+- [x] Added Gemini JSON response parser with unsafe-output rejection
+- [x] Added client-side safety and service-unavailable error handling
+- [x] Added session detail insight report generation and local report persistence
+- [x] Added report display with hard-coded non-diagnosis disclaimer and DOH-NCMH distress note
+- [x] Added print/share report controls
+- [x] Added focused tests for Gemini proxy helpers, proxy client errors, longitudinal context, and report UI
 
 ## In Progress
 
-- [ ] No active local-first slice item
+- [ ] No active MVP feature slice item
 
 ## Next
 
-1. Wire the real Gemini API call inside `api/generate-insight.ts`.
-2. Add Gemini response parser and safety rejection handling.
-3. Add insight report screen with mandatory disclaimer and distress note.
-4. Add print/share report workflow.
-5. Add biomarker longitudinal summary integration for Gemini payload context.
+1. Add deployment configuration notes for Vercel environment variables and serverless proxy hosting.
+2. Add import/export restore flow for local-first backup.
+3. Add storage corruption handling UI.
+4. Improve mobile navigation.
+5. Run an accessibility pass.
 
 ## Later
 
-- [ ] Print/share report workflow
 - [ ] Import/export restore flow
 - [ ] Storage corruption handling UI
 - [ ] Better mobile navigation
@@ -117,6 +127,10 @@ Medication reminder local-first slice complete; next phase should target the Gem
 | 2026-05-23 | `npm run lint` | Passed |
 | 2026-05-23 | `npm run build` | Passed |
 | 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chrome | Passed: consent, medication add/edit/pause local flow |
+| 2026-05-23 | `npm test` | Passed: 9 files, 30 tests |
+| 2026-05-23 | `npm run lint` | Passed |
+| 2026-05-23 | `npm run build` | Passed |
+| 2026-05-23 | Browser smoke at `http://127.0.0.1:5173` using system Chromium | Passed: session detail Gemini report generation, disclaimer, distress note, local storage, and medication exclusion |
 
 ## Completion Estimate
 
@@ -134,6 +148,6 @@ Medication reminder local-first slice complete; next phase should target the Gem
 | Symptom tracker | Complete local-first flow with trend summary helper |
 | Medication reminders | Complete local-first UI and storage flow |
 | Session history | Complete local-first history/detail/purge flow |
-| Gemini proxy | Boundary scaffold only |
-| Report generation | Not started |
+| Gemini proxy | Complete bounded MVP implementation |
+| Report generation | Complete local-first display and storage flow |
 | Deployment | Not started |
