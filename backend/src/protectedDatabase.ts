@@ -1,4 +1,4 @@
-import './env'
+import './env.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
@@ -11,7 +11,7 @@ import type {
   SessionRecord,
   TermsAcceptanceRecord,
   UserRecord,
-} from './records'
+} from './records.js'
 
 export const collections: MonitoringCollection[] = [
   'labSessions',

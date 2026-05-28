@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { backendReferenceRanges } from '../src/referenceRanges'
+import { backendReferenceRanges } from '../src/referenceRanges.js'
 import type {
   Contributor,
   InsightReport,
   ReportContributor,
   SynthesisOutput,
-} from '../../frontend/src/types/insight'
+} from '../../frontend/src/types/insight.js'
 
 const REQUIRED_KEYS: Array<keyof SynthesisOutput> = [
   'sessionId',

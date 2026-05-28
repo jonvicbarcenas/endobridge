@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { protectedDatabase } from './protectedDatabase'
+import { protectedDatabase } from './protectedDatabase.js'
 
 export type RequestWithBody = IncomingMessage & {
   body?: unknown

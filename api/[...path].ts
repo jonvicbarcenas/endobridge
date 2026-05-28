@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import appHandler from '../backend/api/app'
-import insightHandler from '../backend/api/generate-insight'
+import appHandler from '../backend/api/app.js'
+import insightHandler from '../backend/api/generate-insight.js'
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   if ((req.url ?? '').startsWith('/api/generate-insight')) {

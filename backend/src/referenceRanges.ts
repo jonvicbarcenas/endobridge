@@ -1,4 +1,4 @@
-import type { BiomarkerKey } from '../../frontend/src/types/session'
+import type { BiomarkerKey } from '../../frontend/src/types/session.js'
 
 export interface BackendReferenceRange {
   label: string

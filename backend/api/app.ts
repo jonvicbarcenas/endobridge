@@ -5,11 +5,11 @@ import {
   callGemini,
   parseGeminiReport,
   validateSynthesisPayload,
-} from './generate-insight'
-import { authenticate, readJson, sendJson } from '../src/http'
-import { scanLabDocument } from '../src/labDocumentScanner'
-import { isMonitoringCollection, protectedDatabase } from '../src/protectedDatabase'
-import type { LabSession } from '../../frontend/src/types/session'
+} from './generate-insight.js'
+import { authenticate, readJson, sendJson } from '../src/http.js'
+import { scanLabDocument } from '../src/labDocumentScanner.js'
+import { isMonitoringCollection, protectedDatabase } from '../src/protectedDatabase.js'
+import type { LabSession } from '../../frontend/src/types/session.js'
 
 const collectionByPath = new Map<string, string>([
   ['lab-sessions', 'labSessions'],
