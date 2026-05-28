@@ -1,0 +1,12 @@
+{
+  "extends": "../backend/tsconfig.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.vercel-api.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": [
+    "./**/*.ts",
+    "../backend/**/*.ts",
+    "../frontend/src/types/**/*.ts"
+  ]
+}
