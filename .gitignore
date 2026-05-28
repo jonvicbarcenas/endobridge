@@ -14,6 +14,9 @@ node_modules
 dist
 dist-ssr
 *.local
+backend/data/*.json
+test-results
+playwright-report
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +31,6 @@ dist-ssr
 
 .vercel
 .env*
+!.env.example
+!frontend/.env.example
+!backend/.env.example
