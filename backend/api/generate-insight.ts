@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { request as httpsRequest } from 'node:https'
-import { referenceRanges } from '../../frontend/src/config/referenceRanges.js'
+import { backendReferenceRanges } from '../src/referenceRanges'
 import type {
   Contributor,
   InsightReport,
@@ -133,7 +133,7 @@ function buildReportContributors(synthesis: SynthesisOutput): ReportContributor[
 
     return {
       ...contributor,
-      biomarkerLabel: referenceRanges[contributor.key].label,
+      biomarkerLabel: backendReferenceRanges[contributor.key].label,
       value: biomarker.value,
       unit: biomarker.unit,
       direction: biomarker.direction,

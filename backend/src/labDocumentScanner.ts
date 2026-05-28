@@ -1,7 +1,7 @@
 import { PDFParse } from 'pdf-parse'
 import { createWorker } from 'tesseract.js'
-import { referenceRanges } from '../../frontend/src/config/referenceRanges.js'
 import type { BiomarkerKey } from '../../frontend/src/types/session'
+import { backendReferenceRanges } from './referenceRanges'
 
 export interface ExtractedBiomarkerValue {
   key: BiomarkerKey
@@ -66,7 +66,7 @@ function extractBiomarkers(text: string) {
       extracted[biomarker.key] = {
         key: biomarker.key,
         value,
-        unit: match?.groups?.unit ?? referenceRanges[biomarker.key].unit,
+        unit: match?.groups?.unit ?? backendReferenceRanges[biomarker.key].unit,
         sourceLabel: label,
         confidence: 'high',
       }
