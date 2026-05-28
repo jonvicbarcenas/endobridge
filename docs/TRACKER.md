@@ -1,10 +1,10 @@
 # EndoBridge Project Tracker
 
-Last updated: 2026-05-23
+Last updated: 2026-05-28
 
 ## Current Phase
 
-Gemini insight report slice complete; next phase should target deployment configuration and local backup/restore hardening.
+SRS/SDD v1.1 refactor is now account-backed for the main MVP flows. The repo has separate `frontend/` and `backend/` folders, a runnable TypeScript/Node backend, MongoDB-backed protected storage when configured, and a Figma-aligned application shell.
 
 ## Completed
 
@@ -70,18 +70,48 @@ Gemini insight report slice complete; next phase should target deployment config
 - [x] Added focused tests for Gemini proxy helpers, proxy client errors, longitudinal context, and report UI
 - [x] Stabilized `vercel dev` Gemini reports by switching the local model default to `gemini-3.1-flash-lite`
 - [x] Replaced serverless outbound Gemini `fetch` with a bounded `node:https` request to avoid Windows Vercel worker crashes
+- [x] Extracted and reviewed updated SRS/SDD PDF text, tables, diagrams, and wireframes
+- [x] Added `docs/DOCS_REFACTOR_BRIEF.md` to capture the new protected-database implementation baseline
+- [x] Moved React/Vite app files into `frontend/`
+- [x] Moved backend implementation files into `backend/`
+- [x] Removed root `api/` compatibility shims for a clean frontend/backend split
+- [x] Split environment examples into `frontend/.env.example` and `backend/.env.example`
+- [x] Added backend auth, terms acceptance, account-scoped monitoring record, and data deletion API scaffold
+- [x] Added frontend `BackendAPIService` client boundary for the upcoming persistence migration
+- [x] Updated app shell/sidebar and dashboard metrics toward the Figma `EndoBridge` dashboard/session-history design
+- [x] Added runnable backend dev server with CORS and Vite proxy support
+- [x] Replaced in-memory backend storage with file-backed protected database state under `backend/data/`
+- [x] Added backend CRUD for account-scoped monitoring records
+- [x] Replaced frontend localStorage-owned app data with authenticated backend API calls
+- [x] Added account login/register UI and backend-saved Terms/privacy/age/disclaimer acceptance
+- [x] Added account-backed daily wellness log UI
+- [x] Added PDF lab result upload with document scanning, OCR fallback, extracted biomarker review, and account storage
+- [x] Wired account export and backend monitoring-data deletion UI
+- [x] Added SRS/SDD-aligned dashboard route with module-based next actions
+- [x] Refactored shell/navigation for responsive desktop sidebar and mobile drawer
+- [x] Fixed desktop sidebar to remain viewport-pinned and removed duplicate history navigation entry
+- [x] Added subtle rounded scrollbar styling for the app and sidebar scroll area
+- [x] Added MongoDB protected database adapter with account-scoped collections, indexes, and JSON import script
+- [x] Fixed backend env loading so non-empty MongoDB settings in `backend/.env` or `backend/.env.local` are honored
+- [x] Removed user-facing MVP/test-style wording from account, PDF, dashboard, and history UI copy
+- [x] Replaced runtime contextual questionnaire generation with the fixed 30-question EndoBridge questionnaire bank
+- [x] Added Playwright E2E coverage for register, terms, lab session, questionnaire, symptoms, reminders, daily logs, PDF upload, and history
+- [x] Added MongoDB Atlas production checklist and graceful protected-data import handling
+- [x] Moved report persistence behind authenticated backend validation so only validated reports are stored
+- [x] Standardized panels, stat cards, empty states, buttons, and form controls
+- [x] Reworked UI copy to keep non-diagnostic, account-backed, scan-and-review PDF boundaries visible
+- [x] Attempted fresh Figma MCP design pull; blocked by revoked Figma OAuth token
 
 ## In Progress
 
-- [ ] No active MVP feature slice item
+- [ ] Configure final deployment secrets and hosting environment
 
 ## Next
 
-1. Add deployment configuration notes for Vercel environment variables and serverless proxy hosting.
-2. Add import/export restore flow for local-first backup.
-3. Add storage corruption handling UI.
-4. Improve mobile navigation.
-5. Run an accessibility pass.
+1. Configure deployment hosting with backend environment secrets.
+2. Add report-generation E2E coverage with a mocked Gemini response.
+3. Expand OCR/document scanning support for additional lab report formats if needed.
+4. Run an accessibility pass on the finalized account-backed workflows.
 
 ## Later
 
@@ -94,13 +124,9 @@ Gemini insight report slice complete; next phase should target deployment config
 
 ## Do Not Add For MVP
 
-- Account system
-- Login/session tokens
-- Server-side health database
-- Cloud sync
-- OCR lab report scanning
 - Clinician dashboard
 - Sending medication details to Gemini
+- Diagnosis, prescription, medication validation, treatment advice, diet plans, exercise prescriptions, or clinical recommendations
 
 ## Verification Log
 
@@ -139,6 +165,42 @@ Gemini insight report slice complete; next phase should target deployment config
 | 2026-05-23 | `npm test` | Passed: 9 files, 31 tests |
 | 2026-05-23 | `npm run lint` | Passed |
 | 2026-05-23 | `npm run build` | Passed |
+| 2026-05-28 | PDF extraction and visual inventory for `../DOCS` SRS/SDD | Passed: 82 pages, 77 tables, 35 embedded images extracted/reviewed |
+| 2026-05-28 | `npm test` after frontend/backend folder split | Passed: 10 files, 32 tests |
+| 2026-05-28 | `npm run lint` after backend scaffold and Figma shell update | Passed |
+| 2026-05-28 | `npm run build` after config move | Passed |
+| 2026-05-28 | Browser smoke at `http://127.0.0.1:5173` | Passed: consent gate, age gate, Figma-style sidebar, dashboard metrics, lab form render |
+| 2026-05-28 | `npm test` after account-backed migration | Passed: 8 files, 18 tests |
+| 2026-05-28 | `npm run lint` after account-backed migration | Passed |
+| 2026-05-28 | `npm run build` after account-backed migration | Passed |
+| 2026-05-28 | Backend API smoke at `http://127.0.0.1:3000` | Passed: register, login, terms acceptance, lab session create/list, auth profile |
+| 2026-05-28 | Figma MCP `get_design_context` / `get_screenshot` | Blocked: Figma OAuth token revoked |
+| 2026-05-28 | `npm run lint` after UI refactor | Passed |
+| 2026-05-28 | `npm run build` after UI refactor | Passed |
+| 2026-05-28 | `npm test` after UI refactor | Passed: 8 files, 18 tests |
+| 2026-05-28 | Browser route smoke after UI refactor | Passed: dashboard, lab, daily logs, symptoms, medications, history, and about rendered with 0 console errors; questionnaire shell title issue found and patched |
+| 2026-05-28 | `npm run lint` after questionnaire shell title patch | Passed |
+| 2026-05-28 | `npm run build` after questionnaire shell title patch | Passed |
+| 2026-05-28 | `npm run lint` after fixed sidebar/duplicate history nav patch | Passed |
+| 2026-05-28 | `npm run build` after fixed sidebar/duplicate history nav patch | Passed |
+| 2026-05-28 | `npm run lint` after scrollbar styling patch | Passed |
+| 2026-05-28 | `npm run build` after scrollbar styling patch | Passed |
+| 2026-05-28 | Playwright dashboard check after scrollbar styling patch | Passed: sidebar scrollbar class and CSS variables applied, 0 console errors |
+| 2026-05-28 | `npm test` after MongoDB adapter migration | Passed: 8 files, 18 tests |
+| 2026-05-28 | `npm run lint` after MongoDB adapter migration | Passed |
+| 2026-05-28 | `npm run build` after MongoDB adapter migration | Passed |
+| 2026-05-28 | Frontend copy scan after removing MVP/test-style UI wording | Passed: only internal `stored-only` data fields remain |
+| 2026-05-28 | Playwright rendered copy check for `/dashboard`, `/lab`, and `/history` | Passed: 0 forbidden MVP/test/backend-account wording hits |
+| 2026-05-28 | MongoDB env load and ping check | Passed: `MONGODB_URI` resolved, MongoDB ping succeeded, backend restarted in MongoDB storage mode |
+| 2026-05-28 | `npm test` after fixed questionnaire bank implementation | Passed: 8 files, 20 tests |
+| 2026-05-28 | `npm run lint` after fixed questionnaire bank implementation | Passed |
+| 2026-05-28 | `npm run build` after fixed questionnaire bank implementation | Passed |
+| 2026-05-28 | Playwright questionnaire flow after fixed bank implementation | Passed: base questions, priority follow-ups, optional daily context, and 0 console errors |
+| 2026-05-28 | `npm run migrate:mongodb` after Atlas import handling | Passed: no local protected database file found, nothing to migrate |
+| 2026-05-28 | `npm test` after E2E/OCR/report-storage slice | Passed: 8 files, 20 tests |
+| 2026-05-28 | `npm run test:e2e` after E2E/OCR/report-storage slice | Passed: register, terms, lab session, questionnaire, symptoms, reminders, daily logs, PDF upload, history |
+| 2026-05-28 | `npm run lint` after E2E/OCR/report-storage slice | Passed |
+| 2026-05-28 | `npm run build` after E2E/OCR/report-storage slice | Passed |
 
 ## Completion Estimate
 
@@ -149,13 +211,16 @@ Gemini insight report slice complete; next phase should target deployment config
 | Validation engine | Foundation complete |
 | Scoring engine | Foundation complete |
 | Questionnaire generation | Foundation complete |
-| Local persistence | Consent, age gate, purge, and recovery support added |
-| Lab entry UI | Complete local-first flow |
-| Consent/age gate | Complete |
+| Backend persistence | MongoDB adapter, Atlas checklist, and import handling complete; deployment secrets remain |
+| Lab entry UI | Complete account-backed flow with PDF scanning and extracted-value review |
+| Dashboard UI | SRS/SDD module overview complete |
+| Consent/age gate | Backend-saved terms, privacy, age, and disclaimer acceptance complete |
 | Questionnaire capture | Complete |
-| Symptom tracker | Complete local-first flow with trend summary helper |
-| Medication reminders | Complete local-first UI and storage flow |
-| Session history | Complete local-first history/detail/purge flow |
-| Gemini proxy | Complete bounded MVP implementation |
-| Report generation | Complete local-first display and storage flow |
+| Symptom tracker | Complete account-backed flow with trend summary helper |
+| Medication reminders | Complete account-backed UI and storage flow |
+| Daily wellness logs | Complete account-backed MVP |
+| Session history | Complete account-backed history/detail/delete/export flow |
+| Gemini proxy | Complete bounded implementation |
+| Report generation | Backend-validated generation and storage flow complete |
+| Updated SRS/SDD protected database alignment | Main MVP flows migrated to backend API |
 | Deployment | Not started |
