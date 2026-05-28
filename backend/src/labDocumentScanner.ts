@@ -1,5 +1,3 @@
-import { PDFParse } from 'pdf-parse'
-import { createWorker } from 'tesseract.js'
 import type { BiomarkerKey } from '../../frontend/src/types/session.js'
 import { backendReferenceRanges } from './referenceRanges.js'
 
@@ -78,6 +76,7 @@ function extractBiomarkers(text: string) {
 }
 
 async function extractTextFromPdf(buffer: Buffer) {
+  const { PDFParse } = await import('pdf-parse')
   const parser = new PDFParse({ data: buffer })
   try {
     const result = await parser.getText()
@@ -88,6 +87,10 @@ async function extractTextFromPdf(buffer: Buffer) {
 }
 
 async function extractTextWithOcr(buffer: Buffer) {
+  const [{ PDFParse }, { createWorker }] = await Promise.all([
+    import('pdf-parse'),
+    import('tesseract.js'),
+  ])
   const parser = new PDFParse({ data: buffer })
   const worker = await createWorker('eng')
   try {
