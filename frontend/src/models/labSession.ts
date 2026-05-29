@@ -30,6 +30,9 @@ export function createLabSession(
     supplementary: {
       age: input.age,
       bmi: input.bmi,
+      weightKg: input.weightKg,
+      heightCm: input.heightCm,
+      labDocumentIds: input.labDocumentIds,
       cycleRegularity: input.cycleRegularity,
     },
     questionnaire,

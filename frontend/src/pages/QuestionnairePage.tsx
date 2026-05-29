@@ -1,6 +1,6 @@
 import { Save } from 'lucide-react'
 import type { FormEvent } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Field, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
 import type { QuestionDefinition } from '../config/questionBank'
@@ -9,7 +9,7 @@ import { createLabSession } from '../models/labSession'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
 import { useSessionDraft } from '../context/sessionDraft'
-import type { MedicationRecord, QuestionnaireResponse } from '../types/session'
+import type { QuestionnaireResponse } from '../types/session'
 
 type ResponseDraft = Record<string, string | string[]>
 
@@ -20,6 +20,68 @@ const sectionLabels: Record<QuestionDefinition['level'], string> = {
   'daily-context': 'Optional daily context',
   'medication-adherence': 'Medication adherence',
 }
+
+const questionnairePages = [
+  {
+    id: 'profile',
+    title: 'Profile measurements',
+    description: 'Age, weight in kg, and height in cm are labeled strictly for BMI context.',
+    questionIds: ['q1-age', 'q2-current-weight', 'q3-height'],
+  },
+  {
+    id: 'cycle',
+    title: 'Cycle pattern',
+    description: 'Cycle timing, period pattern, and recent pelvic discomfort.',
+    questionIds: [
+      'q4-cycle-regularity-3-months',
+      'q5-usual-cycle-length',
+      'q6-last-menstrual-period',
+      'q7-menstrual-flow',
+      'q8-pelvic-pain',
+      'q14-missed-periods',
+      'q15-predictable-periods',
+      'q16-spotting',
+      'q17-cycle-comparison',
+    ],
+  },
+  {
+    id: 'skin-hair',
+    title: 'Skin and hair symptoms',
+    description: 'Acne, unwanted hair growth, hair thinning, and location notes.',
+    questionIds: [
+      'q9-acne',
+      'q10-unwanted-hair',
+      'q11-hair-thinning',
+      'q12-hair-growth-location',
+      'q13-skin-hair-change',
+    ],
+  },
+  {
+    id: 'metabolic',
+    title: 'Metabolic and body changes',
+    description: 'Weight change, fatigue, cravings, activity, and lifestyle context.',
+    questionIds: [
+      'q18-weight-changes',
+      'q19-fatigue-frequency',
+      'q20-cravings-hunger',
+      'q21-physical-activity',
+      'q22-food-notes',
+      'q23-activity-notes',
+    ],
+  },
+  {
+    id: 'daily',
+    title: 'Daily context',
+    description: 'Sleep, stress, mood, and symptom notes that can be joined with daily logs.',
+    questionIds: ['q24-sleep-hours', 'q25-sleep-quality', 'q26-stress-level', 'q27-mood', 'q28-other-symptoms'],
+  },
+  {
+    id: 'adherence',
+    title: 'Medication and adherence context',
+    description: 'Reminder-related tracking only; medication details stay out of AI payloads.',
+    questionIds: ['q29-medication-scheduled', 'q30-medication-note'],
+  },
+] as const
 
 function isMissingRequired(question: QuestionDefinition, value: string | string[] | undefined) {
   if (!question.required) return false
@@ -37,18 +99,35 @@ function groupedQuestions(questions: QuestionDefinition[]) {
   )
 }
 
+function questionsByPage(questions: QuestionDefinition[]) {
+  return questionnairePages
+    .map((page) => ({
+      ...page,
+      questions: page.questionIds
+        .map((id) => questions.find((question) => question.id === id))
+        .filter((question): question is QuestionDefinition => Boolean(question)),
+    }))
+    .filter((page) => page.questions.length > 0)
+}
+
 export function QuestionnairePage() {
   const navigate = useNavigate()
   const { api, token } = useAuth()
   const { draft, clearDraft } = useSessionDraft()
   const [responses, setResponses] = useState<ResponseDraft>(() => {
     if (!draft) return {} as ResponseDraft
-    const defaultResponses: ResponseDraft = { 'q1-age': String(draft.input.age) }
+    const defaultResponses: ResponseDraft = {
+      'q1-age': String(draft.input.age),
+      'q2-current-weight': draft.input.weightKg ? String(draft.input.weightKg) : '',
+      'q3-height': draft.input.heightCm ? String(draft.input.heightCm) : '',
+    }
     return defaultResponses
   })
-  const [includeDailyContext, setIncludeDailyContext] = useState(false)
-  const [hasMedicationRecords, setHasMedicationRecords] = useState(false)
+  const [includeDailyContext] = useState(true)
+  const [hasMedicationRecords] = useState(true)
+  const [activePageIndex, setActivePageIndex] = useState(0)
   const [error, setError] = useState('')
+  const [submitAttempted, setSubmitAttempted] = useState(false)
   const [completedSessionId, setCompletedSessionId] = useState<string | null>(null)
 
   const questions = useMemo(() => {
@@ -70,14 +149,14 @@ export function QuestionnairePage() {
   }, [draft, hasMedicationRecords, includeDailyContext])
 
   const questionGroups = useMemo(() => groupedQuestions(questions), [questions])
-
-  useEffect(() => {
-    if (!token) return
-    api
-      .listRecordData<MedicationRecord>(token, 'medications')
-      .then((records) => setHasMedicationRecords(records.length > 0))
-      .catch(() => setHasMedicationRecords(false))
-  }, [api, token])
+  const pageGroups = useMemo(() => questionsByPage(questions), [questions])
+  const visiblePageIndex = Math.min(activePageIndex, Math.max(pageGroups.length - 1, 0))
+  const activePage = pageGroups[visiblePageIndex]
+  const answeredRequiredCount = questions.filter(
+    (question) => question.required && !isMissingRequired(question, responses[question.id]),
+  ).length
+  const requiredCount = questions.filter((question) => question.required).length
+  const progressPercent = requiredCount > 0 ? Math.round((answeredRequiredCount / requiredCount) * 100) : 0
 
   if (!draft) {
     if (completedSessionId) {
@@ -109,10 +188,20 @@ export function QuestionnairePage() {
 
   async function saveSession(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const missing = questions.some((question) => isMissingRequired(question, responses[question.id]))
+    const missingQuestions = questions.filter((question) => isMissingRequired(question, responses[question.id]))
 
-    if (missing) {
-      setError('Answer all required questionnaire items before saving the session.')
+    if (missingQuestions.length > 0) {
+      setSubmitAttempted(true)
+      const firstMissing = missingQuestions[0]
+      const pageIndex = pageGroups.findIndex((page) => page.questions.some((q) => q.id === firstMissing.id))
+      if (pageIndex !== -1) {
+        setActivePageIndex(pageIndex)
+      }
+      const labels = missingQuestions.map((q) => {
+        const page = pageGroups.find((p) => p.questions.some((pq) => pq.id === q.id))
+        return `${q.code} in "${page ? page.title : 'General'}"`
+      }).join(', ')
+      setError(`Answer all required questionnaire items before saving the session. Unanswered: ${labels}`)
       return
     }
 
@@ -135,26 +224,37 @@ export function QuestionnairePage() {
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2 border-y border-slate-200 py-4">
-          <SecondaryButton
-            onClick={() => setIncludeDailyContext((current) => !current)}
-            type="button"
-          >
-            {includeDailyContext ? 'Remove daily context' : 'Add daily context'}
-          </SecondaryButton>
+          <span className="rounded-full bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-700">
+            Daily context included
+          </span>
+          <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700">
+            Page {visiblePageIndex + 1} of {pageGroups.length}
+          </span>
+          <span className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+            {progressPercent}% required answers complete
+          </span>
+        </div>
+
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-indigo-600 transition-all"
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
 
         <div className="mt-5 space-y-7">
-          {Object.entries(questionGroups).map(([level, groupQuestions]) => (
-            <section className="space-y-4" key={level}>
+          {activePage ? (
+            <section className="space-y-4" key={activePage.id}>
               <div>
                 <h2 className="text-sm font-semibold text-slate-950">
-                  {sectionLabels[level as QuestionDefinition['level']]}
+                  {activePage.title}
                 </h2>
-                <p className="text-xs text-slate-500">
-                  {groupQuestions.length} {groupQuestions.length === 1 ? 'question' : 'questions'}
+                <p className="text-xs leading-5 text-slate-500">
+                  {activePage.description} {activePage.questions.length}{' '}
+                  {activePage.questions.length === 1 ? 'question' : 'questions'}.
                 </p>
               </div>
-              {groupQuestions.map((question) => (
+              {activePage.questions.map((question) => (
                 <QuestionField
                   key={question.id}
                   onChange={(value) => {
@@ -166,19 +266,49 @@ export function QuestionnairePage() {
                   }}
                   question={question}
                   value={responses[question.id]}
+                  error={
+                    submitAttempted && isMissingRequired(question, responses[question.id])
+                      ? 'This question is required.'
+                      : undefined
+                  }
                 />
               ))}
             </section>
-          ))}
+          ) : null}
           </div>
 
         {error ? <p className="mt-4 text-sm text-rose-700">{error}</p> : null}
 
-        <div className="mt-5 flex justify-end border-t border-slate-200 pt-4">
-          <PrimaryButton type="submit">
-            <Save size={18} />
-            Save session
-          </PrimaryButton>
+        <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+          {visiblePageIndex > 0 ? (
+            <SecondaryButton onClick={() => setActivePageIndex((current) => current - 1)} type="button">
+              Back
+            </SecondaryButton>
+          ) : null}
+          {visiblePageIndex < pageGroups.length - 1 ? (
+            <PrimaryButton
+              onClick={() => {
+                const currentPage = pageGroups[visiblePageIndex]
+                const missingOnPage = currentPage.questions.filter((q) => isMissingRequired(q, responses[q.id]))
+                if (missingOnPage.length > 0) {
+                  setSubmitAttempted(true)
+                  const labels = missingOnPage.map((q) => q.code).join(', ')
+                  setError(`Please answer the required question(s) on this page: ${labels}`)
+                  return
+                }
+                setError('')
+                setActivePageIndex((current) => current + 1)
+              }}
+              type="button"
+            >
+              Next section
+            </PrimaryButton>
+          ) : (
+            <PrimaryButton type="submit">
+              <Save size={18} />
+              Save session
+            </PrimaryButton>
+          )}
         </div>
       </Panel>
 
@@ -205,7 +335,15 @@ export function QuestionnairePage() {
           <div>
             <dt className="font-medium text-slate-900">Question bank</dt>
             <dd className="text-slate-600">
-              {questions.length} fixed questions selected from the standard bank.
+              {questions.length} fixed questions selected across {pageGroups.length} questionnaire pages.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-slate-900">Section counts</dt>
+            <dd className="text-slate-600">
+              {Object.entries(questionGroups)
+                .map(([level, groupQuestions]) => `${sectionLabels[level as QuestionDefinition['level']]}: ${groupQuestions.length}`)
+                .join('; ')}
             </dd>
           </div>
         </dl>
@@ -218,15 +356,17 @@ function QuestionField({
   onChange,
   question,
   value,
+  error,
 }: {
   onChange: (value: string | string[]) => void
   question: QuestionDefinition
   value: string | string[] | undefined
+  error?: string
 }) {
   const fieldLabel = `${question.code}. ${question.label}${question.required ? '' : ' (optional)'}`
 
   return (
-    <Field label={fieldLabel}>
+    <Field label={fieldLabel} error={error}>
       {question.type === 'select' ? (
         <select
           aria-label={question.label}

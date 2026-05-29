@@ -13,6 +13,7 @@ export interface DailyLogRecord {
   medicationAdherence: string
   symptomsNote: string
   createdAt: string
+  plainLanguage?: string
 }
 
 export type LabDocumentExtractionStatus =

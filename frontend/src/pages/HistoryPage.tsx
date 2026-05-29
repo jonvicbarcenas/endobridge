@@ -74,7 +74,7 @@ export function HistoryPage() {
             </p>
             <p className="mt-1 text-sm text-slate-600">
               {symptoms.length} symptom entries, {medications.length} medication reminders,{' '}
-              {dailyLogs.length} daily logs, and {documents.length} PDF records are stored in your
+              {dailyLogs.length} daily logs, and {documents.length} lab result files are stored in your
               EndoBridge account.
             </p>
           </div>

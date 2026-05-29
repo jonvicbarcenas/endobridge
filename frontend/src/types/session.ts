@@ -21,6 +21,9 @@ export type BiomarkerInputMap = Partial<Record<BiomarkerKey, BiomarkerInput>>
 export interface LabSessionInput {
   age: number
   bmi?: number
+  weightKg?: number
+  heightCm?: number
+  labDocumentIds?: string[]
   cycleRegularity?: string
   biomarkers: BiomarkerInputMap
 }
@@ -44,6 +47,9 @@ export interface ValidationResult {
 export interface SupplementaryData {
   age: number
   bmi?: number
+  weightKg?: number
+  heightCm?: number
+  labDocumentIds?: string[]
   cycleRegularity?: string
 }
 

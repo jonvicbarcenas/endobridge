@@ -156,9 +156,9 @@ function TermsGate() {
               reports must stay plain-language and observational.
             </p>
             <p>
-              Lab sessions, reports, reminders, uploaded PDF records, and daily logs are stored in
-              your EndoBridge account. PDF uploads can be scanned for supported biomarker values,
-              and extracted values must be reviewed before saving.
+              Lab sessions, reports, reminders, uploaded lab result files, and daily logs are stored
+              in your EndoBridge account. PDF, image, DOCX, DOC, and text uploads can be scanned for
+              supported biomarker values, and extracted values must be reviewed before saving.
             </p>
           </div>
 

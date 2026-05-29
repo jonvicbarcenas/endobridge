@@ -1,15 +1,12 @@
 import {
-  Activity,
   CalendarDays,
   Check,
-  ChevronRight,
   ClipboardList,
   Moon,
   Pill,
   Save,
   Sparkles,
   Trash2,
-  Utensils,
   Waves,
   X,
 } from 'lucide-react'
@@ -18,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, Field, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
 import { useAuth } from '../context/auth'
 import { notifyRecordsChanged } from '../context/records'
+import { interpretDailyLog } from '../engines/dailyLogInterpretationEngine'
 import type { DailyLogRecord } from '../types/monitoring'
 
 const emptyForm = {
@@ -222,197 +220,184 @@ export function DailyLogsPage() {
   }
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="space-y-6">
-        <CompanionHero
-          completedFields={completedFields}
-          editing={Boolean(editingLog)}
-          hasTodayLog={Boolean(todayLog)}
-          onEditToday={() => {
-            if (todayLog) selectLog(todayLog)
-          }}
-          onSkipToday={() =>
-            resetDraft('Daily monitoring is optional. You may continue using EndoBridge even if you skip today’s log.')
-          }
-        />
+    <div className="space-y-6">
+      <CompanionHero
+        editing={Boolean(editingLog)}
+        hasTodayLog={Boolean(todayLog)}
+        onEditToday={() => {
+          if (todayLog) selectLog(todayLog)
+        }}
+        onSkipToday={() =>
+          resetDraft('Daily monitoring is optional. You may continue using EndoBridge even if you skip today’s log.')
+        }
+      />
 
-        <form className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]" onSubmit={saveDailyLog}>
-          <aside className="rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm shadow-slate-200/60">
-            <div className="px-2 py-2">
-              <p className="text-sm font-semibold text-slate-950">Today’s check-in</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">{completionLabel}</p>
-            </div>
-            <div className="mt-2 space-y-2">
-              {companionSections.map(({ id, title, description, icon: Icon }) => {
-                const isActive = activeSection === id
-                return (
-                  <button
-                    className={`flex w-full items-start gap-3 rounded-[14px] px-3 py-3 text-left transition ${
-                      isActive
-                        ? 'bg-indigo-50 text-indigo-900 ring-1 ring-indigo-100'
-                        : 'text-slate-700 hover:bg-slate-50'
-                    }`}
-                    key={id}
-                    onClick={() => setActiveSection(id)}
-                    type="button"
-                  >
-                    <span
-                      className={`flex size-9 shrink-0 items-center justify-center rounded-[12px] ${
-                        isActive ? 'bg-white text-indigo-700 shadow-sm' : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      <Icon size={18} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold">{title}</span>
-                      <span className="mt-0.5 block text-xs leading-5 text-slate-500">
-                        {description}
-                      </span>
-                    </span>
-                    <ChevronRight className="ml-auto mt-2 shrink-0 text-slate-400" size={16} />
-                  </button>
-                )
-              })}
-            </div>
-          </aside>
-
-          <div className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60 sm:p-6">
-            <CompanionSection activeSection={activeSection} form={form} setForm={setForm} />
-
-            <div className="mt-6 border-t border-slate-200 pt-5">
-              {message ? (
-                <p
-                  className={`mb-4 rounded-[12px] px-3 py-2 text-sm font-medium ${
-                    message.startsWith('Failed')
-                      ? 'bg-rose-50 text-rose-700'
-                      : 'bg-emerald-50 text-emerald-800'
-                  }`}
-                >
-                  {message}
-                </p>
-              ) : null}
-
-              <div className="flex flex-wrap items-center gap-3">
-                <PrimaryButton disabled={!editingLog && Boolean(todayLog)} type="submit">
-                  <Save size={18} />
-                  {editingLog ? 'Update daily log' : 'Save daily log'}
-                </PrimaryButton>
-                {editingLog ? (
-                  <>
+      <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <form className="space-y-6" onSubmit={saveDailyLog}>
+          <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
+            {/* Horizontal Sub-navigation */}
+            <div className="border-b border-slate-100 bg-slate-50/50 p-4 sm:px-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-2">
+                {companionSections.map(({ id, title, icon: Icon }) => {
+                  const isActive = activeSection === id
+                  return (
                     <button
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-200"
-                      onClick={() => deleteDailyLog(editingLog.logId)}
+                      className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                      key={id}
+                      onClick={() => setActiveSection(id)}
                       type="button"
                     >
-                      <Trash2 size={18} />
-                      Delete log
+                      <Icon size={16} />
+                      <span>{title}</span>
                     </button>
-                    <SecondaryButton onClick={() => resetDraft()} type="button">
-                      <X size={18} />
-                      Cancel
-                    </SecondaryButton>
-                  </>
-                ) : null}
-                {!editingLog && todayLog ? (
-                  <p className="text-sm font-medium text-amber-700">
-                    Today already has a saved log. Select it from recent logs to update it.
+                  )
+                })}
+              </div>
+              <div className="text-right hidden sm:block">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-800">
+                  <span className="size-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                  {completionLabel}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-5 sm:p-6">
+              <CompanionSection activeSection={activeSection} form={form} setForm={setForm} />
+
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                {message ? (
+                  <p
+                    className={`mb-4 rounded-[12px] px-3 py-2 text-sm font-medium ${
+                      message.startsWith('Failed')
+                        ? 'bg-rose-50 text-rose-700'
+                        : 'bg-emerald-50 text-emerald-800'
+                    }`}
+                  >
+                    {message}
                   </p>
                 ) : null}
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <PrimaryButton disabled={!editingLog && Boolean(todayLog)} type="submit">
+                    <Save size={18} />
+                    {editingLog ? 'Update daily log' : 'Save daily log'}
+                  </PrimaryButton>
+                  {editingLog ? (
+                    <>
+                      <button
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-200"
+                        onClick={() => deleteDailyLog(editingLog.logId)}
+                        type="button"
+                      >
+                        <Trash2 size={18} />
+                        Delete log
+                      </button>
+                      <SecondaryButton onClick={() => resetDraft()} type="button">
+                        <X size={18} />
+                        Cancel
+                      </SecondaryButton>
+                    </>
+                  ) : null}
+                  {!editingLog && todayLog ? (
+                    <p className="text-sm font-medium text-amber-700">
+                      Today already has a saved log. Select it from recent logs to update it.
+                    </p>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
         </form>
-      </div>
 
-      <aside className="space-y-6">
-        <LogPreview form={form} completionLabel={completionLabel} />
+        <aside className="space-y-6">
+          <section className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
+            <p className="text-sm font-semibold text-slate-950">Optional progress</p>
+            <div className="mt-3 flex items-baseline gap-2">
+              <span className="text-4xl font-semibold text-indigo-700">{completedFields}</span>
+              <span className="text-sm text-slate-500">of 9 areas noted</span>
+            </div>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-indigo-600 transition-all"
+                style={{ width: `${Math.min(100, (completedFields / 9) * 100)}%` }}
+              />
+            </div>
+          </section>
 
-        <section className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Recent logs</p>
-              <p className="mt-1 text-xs text-slate-500">Select a log to edit it.</p>
+          <section className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Recent logs</p>
+                <p className="mt-1 text-xs text-slate-500">Select a log to edit it.</p>
+              </div>
+              <CalendarDays className="text-slate-400" size={18} />
             </div>
-            <CalendarDays className="text-slate-400" size={18} />
-          </div>
-          {latestLogs.length === 0 ? (
-            <div className="mt-4">
-              <EmptyState title="No daily wellness logs yet">
-                Daily monitoring is optional and does not block lab sessions, reports, reminders, or
-                dashboard access.
-              </EmptyState>
-            </div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              {latestLogs.map((log) => (
-                <RecentLogCard
-                  isEditing={editingLog?.logId === log.logId}
-                  isToday={getLocalDateString(new Date(log.date)) === todayStr}
-                  key={log.logId}
-                  log={log}
-                  onDelete={deleteDailyLog}
-                  onSelect={selectLog}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      </aside>
-    </section>
+            {latestLogs.length === 0 ? (
+              <div className="mt-4">
+                <EmptyState title="No daily wellness logs yet">
+                  Daily monitoring is optional and does not block lab sessions, reports, reminders, or
+                  dashboard access.
+                </EmptyState>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {latestLogs.map((log) => (
+                  <RecentLogCard
+                    isEditing={editingLog?.logId === log.logId}
+                    isToday={getLocalDateString(new Date(log.date)) === todayStr}
+                    key={log.logId}
+                    log={log}
+                    onDelete={deleteDailyLog}
+                    onSelect={selectLog}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </aside>
+      </section>
+    </div>
   )
 }
 
 function CompanionHero({
-  completedFields,
   editing,
   hasTodayLog,
   onEditToday,
   onSkipToday,
 }: {
-  completedFields: number
   editing: boolean
   hasTodayLog: boolean
   onEditToday: () => void
   onSkipToday: () => void
 }) {
   return (
-    <section className="overflow-hidden rounded-[22px] border border-indigo-100 bg-white shadow-sm shadow-slate-200/70">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="p-6 sm:p-8">
-          <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
-            <ClipboardList size={14} />
-            Everyday companion
-          </div>
-          <h1 className="mt-4 text-2xl font-semibold leading-8 text-slate-950 sm:text-3xl">
-            {editing ? 'Update your daily wellness check-in' : 'How is today going?'}
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
-            Log only what you want to track today. EndoBridge stores these notes as self-monitoring
-            context and does not generate treatment, diet, exercise, or medication advice.
-          </p>
-          <div className="mt-5 flex flex-wrap gap-3">
-            {hasTodayLog && !editing ? (
-              <SecondaryButton onClick={onEditToday} type="button">
-                <CalendarDays size={17} />
-                Edit today’s log
-              </SecondaryButton>
-            ) : null}
-            <SecondaryButton onClick={onSkipToday} type="button">
-              Skip today
-            </SecondaryButton>
-          </div>
-        </div>
-        <div className="border-t border-indigo-100 bg-indigo-50/60 p-6 lg:border-l lg:border-t-0">
-          <p className="text-sm font-semibold text-indigo-950">Optional progress</p>
-          <p className="mt-2 text-4xl font-semibold text-indigo-700">{completedFields}</p>
-          <p className="mt-1 text-sm text-indigo-900/70">of 9 areas noted</p>
-          <div className="mt-5 h-2 overflow-hidden rounded-full bg-white">
-            <div
-              className="h-full rounded-full bg-indigo-600 transition-all"
-              style={{ width: `${Math.min(100, (completedFields / 9) * 100)}%` }}
-            />
-          </div>
-        </div>
+    <section className="overflow-hidden rounded-[22px] border border-indigo-100 bg-white p-6 sm:p-8 shadow-sm shadow-slate-200/70">
+      <div className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+        <ClipboardList size={14} />
+        Everyday companion
+      </div>
+      <h1 className="mt-4 text-2xl font-semibold leading-8 text-slate-950 sm:text-3xl">
+        {editing ? 'Update your daily wellness check-in' : 'How is today going?'}
+      </h1>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
+        Log only what you want to track today. EndoBridge stores these notes as self-monitoring
+        context and does not generate treatment, diet, exercise, or medication advice.
+      </p>
+      <div className="mt-5 flex flex-wrap gap-3">
+        {hasTodayLog && !editing ? (
+          <SecondaryButton onClick={onEditToday} type="button">
+            <CalendarDays size={17} />
+            Edit today’s log
+          </SecondaryButton>
+        ) : null}
+        <SecondaryButton onClick={onSkipToday} type="button">
+          Skip today
+        </SecondaryButton>
       </div>
     </section>
   )
@@ -697,44 +682,6 @@ function ChipGroup({
   )
 }
 
-function LogPreview({
-  completionLabel,
-  form,
-}: {
-  completionLabel: string
-  form: FormState
-}) {
-  const previewItems = [
-    { icon: Utensils, label: 'Food', value: form.foodNotes },
-    { icon: Activity, label: 'Activity', value: form.exercise },
-    { icon: Moon, label: 'Sleep', value: form.sleepHours ? `${form.sleepHours} hours` : '' },
-    { icon: Sparkles, label: 'Mood', value: form.mood },
-    { icon: Waves, label: 'Cycle / symptoms', value: form.cycleEvent || form.symptomsNote },
-    { icon: Pill, label: 'Medication', value: form.medicationAdherence },
-  ]
-
-  return (
-    <section className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
-      <p className="text-sm font-semibold text-slate-950">Current draft</p>
-      <p className="mt-1 text-xs text-slate-500">{completionLabel}</p>
-      <div className="mt-4 space-y-3">
-        {previewItems.map(({ icon: Icon, label, value }) => (
-          <div className="flex items-start gap-3 rounded-[12px] bg-slate-50 p-3" key={label}>
-            <Icon className="mt-0.5 shrink-0 text-slate-400" size={16} />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.05em] text-slate-500">
-                {label}
-              </p>
-              <p className="mt-1 text-sm leading-5 text-slate-700">
-                {value || 'No note added'}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
 
 function RecentLogCard({
   isEditing,
@@ -749,6 +696,8 @@ function RecentLogCard({
   onDelete: (logId: string) => void
   onSelect: (log: DailyLogRecord) => void
 }) {
+  const interpretation = interpretDailyLog(log)
+
   return (
     <article
       className={`group relative rounded-[12px] border p-3 transition ${
@@ -773,6 +722,9 @@ function RecentLogCard({
         </div>
         <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">
           {log.mood || log.symptomsNote || log.cycleEvent || log.foodNotes || 'Saved wellness entry'}
+        </p>
+        <p className="mt-2 rounded-[10px] bg-white px-3 py-2 text-xs leading-5 text-slate-600">
+          {interpretation.plainLanguage}
         </p>
       </button>
       <button

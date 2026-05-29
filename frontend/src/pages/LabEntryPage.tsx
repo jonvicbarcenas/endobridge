@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Field, Panel, PrimaryButton, StatusBadge, fieldControlClass } from '../components/ui'
 import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
+import { calculateBmi } from '../engines/measurementEngine'
 import { validateLabSessionInput } from '../engines/validationEngine'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
@@ -23,15 +24,23 @@ const initialBiomarkers: Record<BiomarkerKey, string> = {
 
 function buildInput({
   age,
-  bmi,
+  heightCm,
+  labDocumentIds,
+  weightKg,
   cycleRegularity,
   biomarkerValues,
 }: {
   age: string
-  bmi: string
+  heightCm: string
+  labDocumentIds: string[]
+  weightKg: string
   cycleRegularity: string
   biomarkerValues: Record<BiomarkerKey, string>
 }): LabSessionInput {
+  const calculatedBmi = calculateBmi({
+    weightKg: Number(weightKg),
+    heightCm: Number(heightCm),
+  })
   const biomarkers = Object.fromEntries(
     mandatoryBiomarkers.map((key) => [
       key,
@@ -44,7 +53,10 @@ function buildInput({
 
   return {
     age: Number(age),
-    bmi: bmi.trim() ? Number(bmi) : undefined,
+    bmi: calculatedBmi ?? undefined,
+    weightKg: weightKg.trim() ? Number(weightKg) : undefined,
+    heightCm: heightCm.trim() ? Number(heightCm) : undefined,
+    labDocumentIds,
     cycleRegularity,
     biomarkers,
   }
@@ -54,7 +66,7 @@ function rangeLabel(direction?: string) {
   if (direction === 'low') return 'below expected range'
   if (direction === 'high') return 'above expected range'
   if (direction === 'normal') return 'within expected range'
-  return 'pending'
+  return 'review value'
 }
 
 function createDocumentId() {
@@ -77,11 +89,13 @@ export function LabEntryPage() {
   const { api, token } = useAuth()
   const { setDraft } = useSessionDraft()
   const [age, setAge] = useState('28')
-  const [bmi, setBmi] = useState('26')
+  const [weightKg, setWeightKg] = useState('68')
+  const [heightCm, setHeightCm] = useState('160')
   const [cycleRegularity, setCycleRegularity] = useState('irregular')
   const [biomarkerValues, setBiomarkerValues] = useState(initialBiomarkers)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [documents, setDocuments] = useState<LabDocumentRecord[]>([])
+  const [sessionDocumentIds, setSessionDocumentIds] = useState<string[]>([])
   const [uploadMessage, setUploadMessage] = useState('')
   const [latestScan, setLatestScan] = useState<{
     fileName: string
@@ -89,7 +103,14 @@ export function LabEntryPage() {
     message: string
   } | null>(null)
 
-  const input = buildInput({ age, bmi, cycleRegularity, biomarkerValues })
+  const input = buildInput({
+    age,
+    weightKg,
+    heightCm,
+    labDocumentIds: sessionDocumentIds,
+    cycleRegularity,
+    biomarkerValues,
+  })
   const validation = validateLabSessionInput(input)
 
   useEffect(() => {
@@ -114,16 +135,25 @@ export function LabEntryPage() {
     navigate('/questionnaire')
   }
 
-  async function uploadPdf(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadLabResultFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file || !token) return
 
-    if (file.type !== 'application/pdf') {
-      setUploadMessage('Upload a PDF lab result file.')
+    const supportedTypes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+    ]
+    if (!supportedTypes.includes(file.type)) {
+      setUploadMessage('Upload a PDF, image, DOCX, DOC, or text lab result file.')
       return
     }
 
-    setUploadMessage('Scanning PDF for biomarker values...')
+    setUploadMessage('Scanning lab result file for biomarker values...')
     const dataUrl = await readFileAsDataUrl(file)
     const scan = await api.scanLabDocument<{
       extractionStatus: LabDocumentRecord['extractionStatus']
@@ -147,6 +177,7 @@ export function LabEntryPage() {
 
     await api.createRecord<LabDocumentRecord>(token, 'lab-documents', record)
     setDocuments((current) => [record, ...current])
+    setSessionDocumentIds((current) => [record.documentId, ...current])
     setLatestScan({
       fileName: file.name,
       extractedBiomarkers: scan.extractedBiomarkers,
@@ -202,15 +233,39 @@ export function LabEntryPage() {
               value={age}
             />
           </Field>
-          <Field label="BMI">
+          <Field label="Weight (kg)">
             <input
-              aria-label="BMI"
+              aria-label="Weight in kilograms"
               className={fieldControlClass}
-              onChange={(event) => setBmi(event.target.value)}
+              min={20}
+              onChange={(event) => setWeightKg(event.target.value)}
+              step="0.1"
               type="number"
-              value={bmi}
+              value={weightKg}
             />
           </Field>
+          <Field label="Height (cm)">
+            <input
+              aria-label="Height in centimeters"
+              className={fieldControlClass}
+              min={100}
+              onChange={(event) => setHeightCm(event.target.value)}
+              step="0.1"
+              type="number"
+              value={heightCm}
+            />
+          </Field>
+          <Field label="BMI (auto-calculated)">
+            <input
+              aria-label="BMI auto-calculated"
+              className={`${fieldControlClass} bg-slate-50 text-slate-600`}
+              readOnly
+              value={input.bmi ? String(input.bmi) : 'Enter kg and cm'}
+            />
+          </Field>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-1">
           <Field label="Cycle regularity">
             <select
               aria-label="Cycle regularity"
@@ -230,7 +285,8 @@ export function LabEntryPage() {
           {mandatoryBiomarkers.map((key) => {
             const range = referenceRanges[key]
             const entry = validation.validatedBiomarkers[key]
-            const error = fieldError(key)
+            const plausibilityError = validation.errors.includes(`${key} is outside plausibility bounds`)
+            const error = fieldError(key) ?? (plausibilityError ? `${range.label} needs review.` : undefined)
             const isFlagged = Boolean(entry?.isFlagged)
 
             return (
@@ -266,18 +322,23 @@ export function LabEntryPage() {
       </Panel>
 
       <div className="space-y-6">
-        <Panel eyebrow="Personal records" title="PDF lab result record">
+        <Panel eyebrow="Personal records" title="Lab result upload">
           <div className="flex items-start gap-3">
             <FileText className="mt-1 text-indigo-700" size={20} />
             <p className="text-sm leading-6 text-slate-600">
-              Upload a PDF lab result to scan for supported biomarker values. Review extracted
-              values before saving them to a lab session.
+              Upload a PDF, lab result photo, DOCX, DOC, or text file to scan for supported
+              biomarker values. Review extracted values before saving them to a lab session.
             </p>
           </div>
           <label className="mt-4 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-within:ring-4 focus-within:ring-slate-200">
             <Upload size={17} />
-            Upload PDF
-            <input accept="application/pdf" className="sr-only" onChange={uploadPdf} type="file" />
+            Upload lab result
+            <input
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt,application/pdf,image/png,image/jpeg,image/webp,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="sr-only"
+              onChange={uploadLabResultFile}
+              type="file"
+            />
           </label>
           {uploadMessage ? (
             <p className="mt-3 text-sm font-medium text-emerald-700">{uploadMessage}</p>

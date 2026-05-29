@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { InsufficientDataError, scoreSession } from './scoringEngine'
 import { createLabSession } from '../models/labSession'
 import { validateLabSessionInput } from './validationEngine'
+import type { DailyLogRecord, LabDocumentRecord } from '../types/monitoring'
 import type { LabSessionInput } from '../types/session'
 
 const input: LabSessionInput = {
@@ -93,6 +94,138 @@ describe('scoreSession', () => {
         ]),
       }),
     )
+  })
+
+  it('includes recent daily logs and uploaded lab document context in synthesis output', () => {
+    const validation = validateLabSessionInput(input)
+    const session = createLabSession(input, validation)
+    session.sessionId = 'current-session'
+    session.timestamp = '2026-05-29T08:00:00.000Z'
+    session.supplementary.labDocumentIds = ['doc-1']
+
+    const dailyLogs: DailyLogRecord[] = [
+      {
+        logId: 'daily-1',
+        date: '2026-05-29T07:00:00.000Z',
+        createdAt: '2026-05-29T07:00:00.000Z',
+        foodNotes: 'Cravings',
+        exercise: '',
+        sleepHours: 5,
+        mood: 'Anxious',
+        stressLevel: 4,
+        cycleEvent: '',
+        weightKg: 68,
+        medicationAdherence: 'Skipped',
+        symptomsNote: 'Fatigue',
+      },
+    ]
+    const labDocuments: LabDocumentRecord[] = [
+      {
+        documentId: 'doc-1',
+        fileName: 'lab-photo.png',
+        fileType: 'image/png',
+        fileSize: 1234,
+        uploadedAt: '2026-05-29T06:00:00.000Z',
+        dataUrl: 'data:image/png;base64,abc',
+        extractionStatus: 'ocr-scanned',
+        extractedTextPreview: 'LDL cholesterol 180 mg/dL',
+        scanMessage: 'Scanned image and found 1 biomarker value for review.',
+      },
+    ]
+
+    const synthesis = scoreSession(session, {
+      dailyLogs,
+      labDocuments,
+    })
+
+    expect(synthesis.dailyLogSummary).toEqual([
+      expect.objectContaining({
+        logId: 'daily-1',
+        mood: 'Anxious',
+        summary: expect.stringContaining('anxious'),
+      }),
+    ])
+    expect(synthesis.labDocumentContext).toEqual([
+      expect.objectContaining({
+        documentId: 'doc-1',
+        fileName: 'lab-photo.png',
+        extractionStatus: 'ocr-scanned',
+      }),
+    ])
+    expect(JSON.stringify(synthesis)).not.toMatch(/medicationAdherence|Skipped/i)
+  })
+
+  it('links only daily logs from 7 days before through 3 days after the lab session', () => {
+    const validation = validateLabSessionInput(input)
+    const session = createLabSession(input, validation)
+    session.sessionId = 'current-session'
+    session.timestamp = '2026-05-29T08:00:00.000Z'
+
+    const dailyLogs: DailyLogRecord[] = [
+      {
+        logId: 'too-old',
+        date: '2026-05-21T07:59:59.000Z',
+        createdAt: '2026-05-21T07:59:59.000Z',
+        foodNotes: '',
+        exercise: '',
+        sleepHours: null,
+        mood: 'Old',
+        stressLevel: null,
+        cycleEvent: '',
+        weightKg: null,
+        medicationAdherence: '',
+        symptomsNote: '',
+      },
+      {
+        logId: 'within-before',
+        date: '2026-05-22T08:00:00.000Z',
+        createdAt: '2026-05-22T08:00:00.000Z',
+        foodNotes: '',
+        exercise: '',
+        sleepHours: 5,
+        mood: 'Anxious',
+        stressLevel: 4,
+        cycleEvent: '',
+        weightKg: null,
+        medicationAdherence: '',
+        symptomsNote: 'Fatigue',
+      },
+      {
+        logId: 'within-after',
+        date: '2026-06-01T08:00:00.000Z',
+        createdAt: '2026-06-01T08:00:00.000Z',
+        foodNotes: '',
+        exercise: '',
+        sleepHours: null,
+        mood: 'Okay',
+        stressLevel: null,
+        cycleEvent: '',
+        weightKg: null,
+        medicationAdherence: '',
+        symptomsNote: 'Cramps',
+      },
+      {
+        logId: 'too-new',
+        date: '2026-06-02T08:00:01.000Z',
+        createdAt: '2026-06-02T08:00:01.000Z',
+        foodNotes: '',
+        exercise: '',
+        sleepHours: null,
+        mood: 'Future',
+        stressLevel: null,
+        cycleEvent: '',
+        weightKg: null,
+        medicationAdherence: '',
+        symptomsNote: '',
+      },
+    ]
+
+    const synthesis = scoreSession(session, { dailyLogs })
+
+    expect(synthesis.dailyLogSummary.map((log) => log.logId)).toEqual([
+      'within-after',
+      'within-before',
+    ])
   })
 
   it('does not produce partial synthesis output when mandatory data is incomplete', () => {

@@ -6,12 +6,13 @@ import { SymptomSeverityBadge } from '../components/SymptomSeverityBadge'
 import { Panel, PrimaryButton, StatusBadge } from '../components/ui'
 import { questionBank } from '../config/questionBank'
 import { referenceRanges } from '../config/referenceRanges'
-import { getSymptomLabel } from '../config/symptoms'
+import { buildSessionSymptomHistory } from '../engines/symptomHistoryEngine'
 import { InsufficientDataError, scoreSession } from '../engines/scoringEngine'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
 import { BackendApiError } from '../services/backendApiService'
 import type { InsightReport as InsightReportType, SynthesisOutput } from '../types/insight'
+import type { DailyLogRecord, LabDocumentRecord } from '../types/monitoring'
 import type {
   BiomarkerEntry,
   BiomarkerKey,
@@ -37,13 +38,12 @@ export function SessionDetailPage() {
   const [sessions, setSessions] = useState<LabSession[]>([])
   const [session, setSession] = useState<LabSession | null>(null)
   const [symptoms, setSymptoms] = useState<SymptomEntry[]>([])
+  const [dailyLogs, setDailyLogs] = useState<DailyLogRecord[]>([])
+  const [labDocuments, setLabDocuments] = useState<LabDocumentRecord[]>([])
   const [medications, setMedications] = useState<MedicationRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
-  const symptomEntries = sessionId
-    ? symptoms.filter((symptom) => symptom.sessionId === sessionId)
-    : []
   const activeMedications = medications.filter((medication) => medication.isActive)
 
   useEffect(() => {
@@ -52,12 +52,16 @@ export function SessionDetailPage() {
     Promise.all([
       api.listRecordData<LabSession>(token, 'lab-sessions'),
       api.listRecordData<SymptomEntry>(token, 'symptoms'),
+      api.listRecordData<DailyLogRecord>(token, 'daily-logs'),
+      api.listRecordData<LabDocumentRecord>(token, 'lab-documents'),
       api.listRecordData<MedicationRecord>(token, 'medications'),
     ])
-      .then(([nextSessions, nextSymptoms, nextMedications]) => {
+      .then(([nextSessions, nextSymptoms, nextDailyLogs, nextLabDocuments, nextMedications]) => {
         setSessions(nextSessions)
         setSession(nextSessions.find((entry) => entry.sessionId === sessionId) ?? null)
         setSymptoms(nextSymptoms)
+        setDailyLogs(nextDailyLogs)
+        setLabDocuments(nextLabDocuments)
         setMedications(nextMedications)
       })
       .finally(() => setIsLoading(false))
@@ -91,6 +95,7 @@ export function SessionDetailPage() {
   const biomarkerEntries = Object.entries(session.biomarkers).filter(
     (entry): entry is [BiomarkerKey, BiomarkerEntry] => Boolean(entry[1]),
   )
+  const sessionSymptomRows = buildSessionSymptomHistory([session], symptoms)[0]?.rows ?? []
 
   let synthesis: SynthesisOutput | null = null
   let contributorError: 'insufficient' | 'unknown' | null = null
@@ -99,6 +104,8 @@ export function SessionDetailPage() {
       synthesis = scoreSession(session, {
       sessions,
       symptoms,
+      dailyLogs,
+      labDocuments,
     })
   } catch (error) {
     contributorError = error instanceof InsufficientDataError ? 'insufficient' : 'unknown'
@@ -158,12 +165,65 @@ export function SessionDetailPage() {
             <dd className="text-slate-600">{session.supplementary.bmi ?? 'Not provided'}</dd>
           </div>
           <div>
+            <dt className="font-medium text-slate-900">Measurements</dt>
+            <dd className="text-slate-600">
+              {session.supplementary.weightKg && session.supplementary.heightCm
+                ? `${session.supplementary.weightKg} kg, ${session.supplementary.heightCm} cm`
+                : 'Not provided'}
+            </dd>
+          </div>
+          <div>
             <dt className="font-medium text-slate-900">Cycle</dt>
             <dd className="text-slate-600">
               {session.supplementary.cycleRegularity ?? 'Not provided'}
             </dd>
           </div>
         </dl>
+      </Panel>
+
+      <Panel title="Uploaded lab result context">
+        {synthesis && synthesis.labDocumentContext.length > 0 ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {synthesis.labDocumentContext.map((document) => (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={document.documentId}>
+                <p className="text-sm font-semibold text-slate-950">{document.fileName}</p>
+                <p className="mt-1 text-sm text-slate-600">{document.scanMessage}</p>
+                {document.extractedTextPreview ? (
+                  <p className="mt-2 line-clamp-3 text-xs leading-5 text-slate-500">
+                    {document.extractedTextPreview}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            No uploaded lab result file is linked to this session.
+          </p>
+        )}
+      </Panel>
+
+      <Panel title="Daily logs used in AI interpretation">
+        <p className="mb-3 text-sm leading-6 text-slate-600">
+          EndoBridge automatically includes daily logs from 7 days before through 3 days after this
+          lab session. Daily logs remain independent records.
+        </p>
+        {synthesis && synthesis.dailyLogSummary.length > 0 ? (
+          <div className="space-y-3">
+            {synthesis.dailyLogSummary.map((log) => (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={log.logId}>
+                <p className="text-sm font-semibold text-slate-950">
+                  {new Date(log.date).toLocaleDateString()}
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">{log.plainLanguage}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-600">
+            No daily logs fall inside this lab session's AI context window.
+          </p>
+        )}
       </Panel>
 
       <Panel title="Biomarker panel">
@@ -207,19 +267,29 @@ export function SessionDetailPage() {
       </Panel>
 
       <Panel title="Session symptoms">
-        {symptomEntries.length > 0 ? (
+        {sessionSymptomRows.length > 0 ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {symptomEntries.map((symptom) => (
-              <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={symptom.entryId}>
+            {sessionSymptomRows.map((symptom) => (
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3" key={symptom.symptomKey}>
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-sm font-semibold text-slate-950">
-                    {getSymptomLabel(symptom.symptomKey)}
+                    {symptom.label}
                   </p>
-                  <SymptomSeverityBadge severity={symptom.severity} />
+                  {symptom.severity ? (
+                    <SymptomSeverityBadge severity={symptom.severity} />
+                  ) : (
+                    <StatusBadge tone="neutral">Not logged</StatusBadge>
+                  )}
                 </div>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{symptom.description}</p>
                 {symptom.note ? (
                   <p className="mt-2 text-sm leading-6 text-slate-600">{symptom.note}</p>
                 ) : null}
+                <p className="mt-2 text-xs text-slate-500">
+                  {symptom.loggedAt
+                    ? `Recorded ${new Date(symptom.loggedAt).toLocaleString()}`
+                    : 'No saved entry for this category in this session.'}
+                </p>
               </div>
             ))}
           </div>

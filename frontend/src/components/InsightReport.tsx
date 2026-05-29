@@ -13,6 +13,33 @@ function directionLabel(direction: string) {
   return direction === 'low' ? 'Below reference' : 'Elevated'
 }
 
+function contributorSeverity(weight: number) {
+  if (weight >= 0.45) {
+    return {
+      label: 'High contribution',
+      color: 'bg-rose-600',
+      text: 'text-rose-700',
+      track: 'bg-rose-100',
+    }
+  }
+
+  if (weight >= 0.25) {
+    return {
+      label: 'Moderate contribution',
+      color: 'bg-amber-500',
+      text: 'text-amber-700',
+      track: 'bg-amber-100',
+    }
+  }
+
+  return {
+    label: 'Lower contribution',
+    color: 'bg-emerald-600',
+    text: 'text-emerald-700',
+    track: 'bg-emerald-100',
+  }
+}
+
 function shareText(report: InsightReportData) {
   const observations = report.observations.map((observation) => `- ${observation}`).join('\n')
   return `${report.observationalSummary}\n\n${observations}\n\n${DISCLAIMER_TEXT}`
@@ -81,9 +108,18 @@ export function InsightReport({
       <div className="rounded-md bg-white p-4">
         <h3 className="text-sm font-semibold text-slate-950">Key observations</h3>
         {report.observations.length > 0 ? (
-          <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-700">
-            {report.observations.map((observation) => (
-              <li key={observation}>{observation}</li>
+          <ul className="mt-2 space-y-3 text-sm leading-6 text-slate-700">
+            {report.observations.map((observation, index) => (
+              <li className="rounded-md border border-slate-200 bg-slate-50 p-3" key={observation}>
+                <p>{observation}</p>
+                <p className="mt-2 text-xs font-semibold uppercase tracking-[0.04em] text-slate-500">
+                  Possible reason
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {report.observationReasons?.[index] ??
+                    'This may reflect the submitted lab values, questionnaire answers, and recent tracking notes together.'}
+                </p>
+              </li>
             ))}
           </ul>
         ) : (
@@ -106,16 +142,27 @@ export function InsightReport({
                       {contributor.value} {contributor.unit} | {directionLabel(contributor.direction)}
                     </p>
                   </div>
-                  <p className="text-sm text-slate-600">
-                    Reference unit: {referenceRanges[contributor.key].unit}
+                  <p className={`text-sm font-semibold ${contributorSeverity(contributor.weight).text}`}>
+                    {Math.round(contributor.weight * 100)}% of max |{' '}
+                    {contributorSeverity(contributor.weight).label}
                   </p>
                 </div>
-                <div className="mt-3 h-2 rounded-full bg-slate-100">
+                <div
+                  aria-label={`${contributor.biomarkerLabel} contribution ${Math.round(contributor.weight * 100)} percent`}
+                  className={`mt-3 h-3 rounded-full ${contributorSeverity(contributor.weight).track}`}
+                >
                   <div
-                    className="h-2 rounded-full bg-emerald-700"
+                    className={`h-3 rounded-full ${contributorSeverity(contributor.weight).color}`}
                     style={{ width: `${Math.min(contributor.weight * 100, 100)}%` }}
                   />
                 </div>
+                <div className="mt-1 flex justify-between text-[11px] font-medium text-slate-500">
+                  <span>0%</span>
+                  <span>Max 100%</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Reference unit: {referenceRanges[contributor.key].unit}
+                </p>
               </li>
             ))}
           </ol>

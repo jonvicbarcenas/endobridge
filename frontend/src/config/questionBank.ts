@@ -37,7 +37,7 @@ export const questionBank: QuestionDefinition[] = [
   {
     id: 'q2-current-weight',
     code: 'Q2',
-    label: 'What is your current weight?',
+    label: 'What is your current weight (kg)?',
     type: 'number',
     purpose: 'Weight trend monitoring',
     level: 'base',
@@ -46,7 +46,7 @@ export const questionBank: QuestionDefinition[] = [
   {
     id: 'q3-height',
     code: 'Q3',
-    label: 'What is your height?',
+    label: 'What is your height (cm)?',
     type: 'number',
     purpose: 'BMI calculation if needed',
     level: 'base',

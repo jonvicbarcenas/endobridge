@@ -62,7 +62,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   },
   '/lab': {
     title: 'Lab Result Entry',
-    description: 'Enter fixed biomarker values, attach optional PDF records, and continue to context questions.',
+    description: 'Enter fixed biomarker values, attach optional lab result files, and continue to context questions.',
   },
   '/daily': {
     title: 'Daily Wellness Log',
@@ -82,7 +82,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   },
   '/history': {
     title: 'History & Reports',
-    description: 'Review account-backed lab sessions, daily logs, PDF records, and observational reports.',
+    description: 'Review account-backed lab sessions, daily logs, uploaded lab result files, and observational reports.',
   },
   '/about': {
     title: 'About EndoBridge',

@@ -115,7 +115,7 @@ export function DashboardPage() {
               Reports are plain-language observations from submitted data only.
             </p>
             <p>It does not diagnose PCOS, prescribe medication, validate prescriptions, or give treatment, diet, or exercise advice.</p>
-            <p>Uploaded PDF lab results can be scanned for supported biomarker values before review.</p>
+            <p>Uploaded PDF, image, and document lab results can be scanned for supported biomarker values before review.</p>
           </div>
         </Panel>
       </div>
@@ -148,7 +148,7 @@ export function DashboardPage() {
 
         <Panel title="Account record summary">
           <div className="grid gap-3 sm:grid-cols-2">
-            <SummaryItem icon={<FileText size={18} />} label="PDF records" value={documents.length} />
+            <SummaryItem icon={<FileText size={18} />} label="Lab result files" value={documents.length} />
             <SummaryItem icon={<BarChart3 size={18} />} label="Reports" value={sessions.filter((session) => session.insightReport).length} />
             <SummaryItem icon={<CalendarDays size={18} />} label="Daily logs" value={dailyLogs.length} />
             <SummaryItem icon={<Pill size={18} />} label="All reminders" value={medications.length} />

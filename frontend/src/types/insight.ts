@@ -1,4 +1,5 @@
 import type { BiomarkerKey, Direction, SymptomKey, SymptomSeverity } from './session'
+import type { LabDocumentExtractionStatus } from './monitoring'
 
 export interface FlaggedBiomarker {
   key: BiomarkerKey
@@ -57,6 +58,22 @@ export interface SynthesisOutput {
   topContributors: Contributor[]
   questionnaireContext: Record<string, unknown>
   longitudinalSummary: LongitudinalSummary
+  dailyLogSummary: Array<{
+    logId: string
+    date: string
+    mood: string | null
+    summary: string
+    possibleReasons: string[]
+    plainLanguage: string
+  }>
+  labDocumentContext: Array<{
+    documentId: string
+    fileName: string
+    fileType: string
+    extractionStatus: LabDocumentExtractionStatus
+    extractedTextPreview: string
+    scanMessage: string
+  }>
 }
 
 export interface ReportContributor extends Contributor {
@@ -69,6 +86,7 @@ export interface ReportContributor extends Contributor {
 export interface InsightReport {
   observationalSummary: string
   observations: string[]
+  observationReasons: string[]
   contributors: ReportContributor[]
   reportTimestamp: string
 }

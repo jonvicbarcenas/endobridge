@@ -7,6 +7,11 @@ import {
 } from './proxyClient'
 import type { SynthesisOutput } from '../types/insight'
 
+const emptySynthesisExtras = {
+  dailyLogSummary: [],
+  labDocumentContext: [],
+}
+
 describe('buildGeminiPayload', () => {
   it('sends synthesis output only and excludes medication details and raw history', () => {
     const synthesis: SynthesisOutput = {
@@ -15,6 +20,7 @@ describe('buildGeminiPayload', () => {
       topContributors: [],
       questionnaireContext: { cyclePattern: 'irregular' },
       longitudinalSummary: { priorSessionCount: 2, biomarkerTrends: [], symptomTrends: [] },
+      ...emptySynthesisExtras,
     }
 
     const payload = buildGeminiPayload(synthesis)
@@ -37,6 +43,7 @@ describe('buildGeminiPayload', () => {
       topContributors: [],
       questionnaireContext: {},
       longitudinalSummary: { priorSessionCount: 0, biomarkerTrends: [], symptomTrends: [] },
+      ...emptySynthesisExtras,
     })).rejects.toBeInstanceOf(UnsafeInsightError)
 
     vi.stubGlobal(
@@ -55,6 +62,7 @@ describe('buildGeminiPayload', () => {
       topContributors: [],
       questionnaireContext: {},
       longitudinalSummary: { priorSessionCount: 0, biomarkerTrends: [], symptomTrends: [] },
+      ...emptySynthesisExtras,
     })).rejects.toBeInstanceOf(InsightServiceUnavailableError)
   })
 })

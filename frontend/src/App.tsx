@@ -48,7 +48,7 @@ function AboutPage() {
       <Panel eyebrow="Purpose" title="Personal PCOS monitoring companion">
         <p className="max-w-3xl text-sm leading-6 text-slate-600">
           EndoBridge helps users organize PCOS-related lab values, symptoms, medication
-          reminders, daily wellness logs, PDF records, and observational insight reports over
+          reminders, daily wellness logs, uploaded lab result files, and observational insight reports over
           time. It is designed for personal monitoring and account-backed record keeping.
         </p>
       </Panel>
