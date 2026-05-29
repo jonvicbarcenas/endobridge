@@ -1,5 +1,6 @@
 import type { BiomarkerKey } from '../../frontend/src/types/session.js'
 import { backendReferenceRanges } from './referenceRanges.js'
+import { inflateRawSync } from 'node:zlib'
 
 export interface ExtractedBiomarkerValue {
   key: BiomarkerKey
@@ -34,11 +35,14 @@ function escapeRegex(value: string) {
 }
 
 function decodeDataUrl(dataUrl: string) {
-  const match = dataUrl.match(/^data:application\/pdf;base64,(?<payload>.+)$/)
-  if (!match?.groups?.payload) {
-    throw new Error('invalid PDF payload')
+  const match = dataUrl.match(/^data:(?<mime>[^;,]+);base64,(?<payload>.+)$/)
+  if (!match?.groups?.payload || !match.groups.mime) {
+    throw new Error('invalid lab document payload')
   }
-  return Buffer.from(match.groups.payload, 'base64')
+  return {
+    mimeType: match.groups.mime,
+    buffer: Buffer.from(match.groups.payload, 'base64'),
+  }
 }
 
 function normalizeWhitespace(value: string) {
@@ -58,21 +62,36 @@ function extractBiomarkers(text: string) {
       const rawValue = match?.groups?.value
       if (!rawValue) continue
 
-      const value = Number(rawValue)
-      if (!Number.isFinite(value)) continue
+      const rawNumber = Number(rawValue)
+      if (!Number.isFinite(rawNumber)) continue
+      const normalized = normalizeExtractedValue(biomarker.key, rawNumber)
 
       extracted[biomarker.key] = {
         key: biomarker.key,
-        value,
+        value: normalized.value,
         unit: match?.groups?.unit ?? backendReferenceRanges[biomarker.key].unit,
-        sourceLabel: label,
-        confidence: 'high',
+        sourceLabel: normalized.adjusted ? `${label} (decimal reviewed)` : label,
+        confidence: normalized.adjusted ? 'medium' : 'high',
       }
       break
     }
   }
 
   return extracted
+}
+
+function normalizeExtractedValue(key: BiomarkerKey, value: number) {
+  const range = backendReferenceRanges[key]
+  if (value >= range.plausibilityMin && value <= range.plausibilityMax) {
+    return { value, adjusted: false }
+  }
+
+  const shifted = Number((value / 10).toFixed(4))
+  if (shifted >= range.plausibilityMin && shifted <= range.plausibilityMax) {
+    return { value: shifted, adjusted: true }
+  }
+
+  return { value, adjusted: false }
 }
 
 async function extractTextFromPdf(buffer: Buffer) {
@@ -84,6 +103,50 @@ async function extractTextFromPdf(buffer: Buffer) {
   } finally {
     await parser.destroy()
   }
+}
+
+function stripXmlText(xml: string) {
+  return normalizeWhitespace(
+    xml
+      .replace(/<w:tab\/>/g, ' ')
+      .replace(/<\/w:p>/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>'),
+  )
+}
+
+function extractTextFromDocx(buffer: Buffer) {
+  let offset = 0
+
+  while (offset < buffer.length - 30) {
+    if (buffer.readUInt32LE(offset) !== 0x04034b50) {
+      offset += 1
+      continue
+    }
+
+    const compression = buffer.readUInt16LE(offset + 8)
+    const compressedSize = buffer.readUInt32LE(offset + 18)
+    const fileNameLength = buffer.readUInt16LE(offset + 26)
+    const extraLength = buffer.readUInt16LE(offset + 28)
+    const fileName = buffer.toString('utf8', offset + 30, offset + 30 + fileNameLength)
+    const dataStart = offset + 30 + fileNameLength + extraLength
+    const dataEnd = dataStart + compressedSize
+
+    if (fileName === 'word/document.xml') {
+      const compressed = buffer.subarray(dataStart, dataEnd)
+      const xml =
+        compression === 8
+          ? inflateRawSync(compressed).toString('utf8')
+          : compressed.toString('utf8')
+      return stripXmlText(xml)
+    }
+
+    offset = dataEnd
+  }
+
+  return ''
 }
 
 async function extractTextWithOcr(buffer: Buffer) {
@@ -107,11 +170,65 @@ async function extractTextWithOcr(buffer: Buffer) {
   }
 }
 
+async function extractTextFromImage(buffer: Buffer) {
+  const { createWorker } = await import('tesseract.js')
+  const worker = await createWorker('eng')
+  try {
+    const result = await worker.recognize(buffer)
+    return normalizeWhitespace(result.data.text)
+  } finally {
+    await worker.terminate()
+  }
+}
+
 export async function scanLabDocument(dataUrl: string): Promise<LabDocumentScanResult> {
-  const buffer = decodeDataUrl(dataUrl)
-  const embeddedText = await extractTextFromPdf(buffer)
-  const text = embeddedText || (await extractTextWithOcr(buffer))
-  const extractionStatus = embeddedText ? 'scanned' : text ? 'ocr-scanned' : 'scan-failed'
+  const { buffer, mimeType } = decodeDataUrl(dataUrl)
+  const isPdf = mimeType === 'application/pdf'
+  const isImage = mimeType.startsWith('image/')
+  const isText = mimeType === 'text/plain'
+  const isDocx =
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    mimeType === 'application/msword'
+  let result: {
+    text: string
+    sourceLabel: string
+    extractionStatus: LabDocumentScanResult['extractionStatus']
+  }
+
+  if (isPdf) {
+    const embeddedText = await extractTextFromPdf(buffer)
+    const text = embeddedText || (await extractTextWithOcr(buffer))
+    result = {
+      text,
+      sourceLabel: 'PDF',
+      extractionStatus: embeddedText ? 'scanned' : text ? 'ocr-scanned' : 'scan-failed',
+    }
+  } else if (isImage) {
+    const text = await extractTextFromImage(buffer)
+    result = {
+      text,
+      sourceLabel: 'image',
+      extractionStatus: text ? 'ocr-scanned' : 'scan-failed',
+    }
+  } else if (isText) {
+    const text = normalizeWhitespace(buffer.toString('utf8'))
+    result = {
+      text,
+      sourceLabel: 'document',
+      extractionStatus: text ? 'scanned' : 'scan-failed',
+    }
+  } else if (isDocx) {
+    const text = extractTextFromDocx(buffer)
+    result = {
+      text,
+      sourceLabel: 'document',
+      extractionStatus: text ? 'scanned' : 'scan-failed',
+    }
+  } else {
+    throw new Error('unsupported lab document type')
+  }
+
+  const { text, extractionStatus, sourceLabel } = result
   const extractedBiomarkers = text ? extractBiomarkers(text) : {}
   const count = Object.keys(extractedBiomarkers).length
 
@@ -121,7 +238,7 @@ export async function scanLabDocument(dataUrl: string): Promise<LabDocumentScanR
     extractedBiomarkers,
     scanMessage:
       extractionStatus === 'scan-failed'
-        ? 'No readable lab text was found in this PDF.'
-        : `Scanned PDF and found ${count} biomarker ${count === 1 ? 'value' : 'values'} for review.`,
+        ? `No readable lab text was found in this ${sourceLabel}.`
+        : `Scanned ${sourceLabel} and found ${count} biomarker ${count === 1 ? 'value' : 'values'} for review.`,
   }
 }

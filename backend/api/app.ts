@@ -5,6 +5,7 @@ import {
   callGemini,
   parseGeminiReport,
   validateSynthesisPayload,
+  callGeminiForDailyLogSummary,
 } from './generate-insight.js'
 import { authenticate, readJson, sendJson } from '../src/http.js'
 import { scanLabDocument } from '../src/labDocumentScanner.js'
@@ -89,7 +90,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
       const body = (await readJson(req, 8_000_000)) as { dataUrl?: string }
       if (!body.dataUrl) {
-        sendJson(res, 400, { error: 'PDF payload is required' })
+        sendJson(res, 400, { error: 'lab result file payload is required' })
         return
       }
       sendJson(res, 200, await scanLabDocument(body.dataUrl))
@@ -165,6 +166,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
           sendJson(res, 403, { error: 'insight reports must be generated through the validated report endpoint' })
           return
         }
+        if (collectionName === 'dailyLogs') {
+          try {
+            const summary = await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+            if (summary && data && typeof data === 'object') {
+              ;(data as Record<string, unknown>).plainLanguage = summary
+            }
+          } catch (error) {
+            console.error('[dailyLogs summary generation failed]', error)
+          }
+        }
         sendJson(res, 201, await protectedDatabase.create(collectionName, user.userId, data))
         return
       }
@@ -174,6 +185,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (collectionName === 'labSessions' && hasNonNullInsightReport(data)) {
           sendJson(res, 403, { error: 'insight reports must be generated through the validated report endpoint' })
           return
+        }
+        if (collectionName === 'dailyLogs') {
+          try {
+            const summary = await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+            if (summary && data && typeof data === 'object') {
+              ;(data as Record<string, unknown>).plainLanguage = summary
+            }
+          } catch (error) {
+            console.error('[dailyLogs summary generation failed]', error)
+          }
         }
         sendJson(
           res,

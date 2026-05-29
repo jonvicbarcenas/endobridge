@@ -14,6 +14,8 @@ const REQUIRED_KEYS: Array<keyof SynthesisOutput> = [
   'topContributors',
   'questionnaireContext',
   'longitudinalSummary',
+  'dailyLogSummary',
+  'labDocumentContext',
 ]
 
 const ALLOWED_SYNTHESIS_KEYS = new Set(REQUIRED_KEYS)
@@ -229,7 +231,9 @@ export function validateSynthesisPayload(body: unknown): { synthesis: SynthesisO
     !Array.isArray(synthesis.flaggedBiomarkers) ||
     !Array.isArray(synthesis.topContributors) ||
     !isPlainObject(synthesis.questionnaireContext) ||
-    !isPlainObject(synthesis.longitudinalSummary)
+    !isPlainObject(synthesis.longitudinalSummary) ||
+    !Array.isArray(synthesis.dailyLogSummary) ||
+    !Array.isArray(synthesis.labDocumentContext)
   ) {
     throw new PayloadValidationError('invalid synthesis payload')
   }
@@ -246,9 +250,10 @@ export function buildGeminiRequest(synthesis: SynthesisOutput) {
         {
           text:
             'You create EndoBridge PCOS monitoring reports from structured data only. ' +
-            'Use strictly observational language. Do not diagnose, prescribe, give treatment plans, ' +
-            'or provide lifestyle instructions. Do not state that a user has, does not have, is clear of, ' +
-            'is positive for, or is negative for PCOS. Return JSON only.',
+            'Use strictly observational language. Include possible reasons only as cautious pattern explanations. ' +
+            'Do not diagnose, prescribe, give treatment plans, or provide lifestyle instructions. ' +
+            'Do not state that a user has, does not have, is clear of, is positive for, or is negative for PCOS. ' +
+            'Return JSON only.',
         },
       ],
     },
@@ -263,6 +268,8 @@ export function buildGeminiRequest(synthesis: SynthesisOutput) {
                 observationalSummary:
                   'Two to four short paragraphs describing patterns in submitted values only.',
                 observations: 'One to four short observational bullets.',
+                observationReasons:
+                  'One short possible-reason sentence for each observation, using may/can language.',
               },
             }),
           },
@@ -281,8 +288,12 @@ export function buildGeminiRequest(synthesis: SynthesisOutput) {
             type: 'array',
             items: { type: 'string' },
           },
+          observationReasons: {
+            type: 'array',
+            items: { type: 'string' },
+          },
         },
-        required: ['observationalSummary', 'observations'],
+        required: ['observationalSummary', 'observations', 'observationReasons'],
       },
     },
     safetySettings: [
@@ -350,7 +361,9 @@ export function parseGeminiReport(rawText: string, synthesis: SynthesisOutput): 
   }
 
   const observations = assertStringArray(parsed.observations)
-  const generatedText = [parsed.observationalSummary, ...observations].join('\n')
+  const rawObservationReasons =
+    'observationReasons' in parsed ? assertStringArray(parsed.observationReasons) : []
+  const generatedText = [parsed.observationalSummary, ...observations, ...rawObservationReasons].join('\n')
 
   if (unsafeTextPatterns().some((pattern) => pattern.test(generatedText))) {
     throw new UnsafeGeminiOutputError()
@@ -359,6 +372,14 @@ export function parseGeminiReport(rawText: string, synthesis: SynthesisOutput): 
   return {
     observationalSummary: parsed.observationalSummary.trim(),
     observations: observations.map((item) => item.trim()).filter(Boolean).slice(0, 4),
+    observationReasons: observations
+      .map((_, index) => rawObservationReasons[index]?.trim())
+      .map((reason) =>
+        reason ||
+        synthesis.dailyLogSummary[0]?.plainLanguage ||
+        'This may reflect the submitted lab values, questionnaire answers, and recent tracking notes together.',
+      )
+      .slice(0, 4),
     contributors: buildReportContributors(synthesis),
     reportTimestamp: new Date().toISOString(),
   }
@@ -391,6 +412,116 @@ export async function callGemini(
       throw error
     }
 
+    throw new GeminiApiError('Gemini API request failed')
+  }
+}
+
+export interface DailyLogPayload {
+  foodNotes?: string
+  exercise?: string
+  sleepHours?: number | null
+  mood?: string
+  stressLevel?: number | null
+  cycleEvent?: string
+  weightKg?: number | null
+  symptomsNote?: string
+}
+
+export function buildDailyLogSummaryRequest(log: DailyLogPayload) {
+  return {
+    systemInstruction: {
+      parts: [
+        {
+          text:
+            'You are a supportive, observational PCOS monitoring companion. You summarize a user\'s daily wellness entry in natural, empathetic, and clear layman\'s terms. ' +
+            'Do not use dry, mechanical templates or repeat fields verbatim. Avoid starting every response with the exact same phrase (e.g. do NOT always start with "In simple terms, "). ' +
+            'Instead, write a fluid, cohesive, and friendly 1-2 sentence description highlighting the connection between their sleep, mood, stress, food, symptoms, and cycle events logged today. ' +
+            'For example, synthesize them: "Your sleep was shorter than usual, which might correlate with the higher stress and fatigue you logged today." ' +
+            'Keep the tone natural, dynamic, and easy to read, but maintain clinical safety limits: strictly observational, no diagnosis, no prescriptions, and no medical/lifestyle advice. ' +
+            'Return JSON only with a single key "plainLanguage".',
+        },
+      ],
+    },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: JSON.stringify({
+              logEntry: {
+                foodNotes: log.foodNotes,
+                exercise: log.exercise,
+                sleepHours: log.sleepHours,
+                mood: log.mood,
+                stressLevel: log.stressLevel,
+                cycleEvent: log.cycleEvent,
+                weightKg: log.weightKg,
+                symptomsNote: log.symptomsNote,
+              },
+              responseContract: {
+                plainLanguage: 'A fluid, natural plain-language summary of the logged wellness entry (max 150 characters).'
+              }
+            }),
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.6,
+      maxOutputTokens: 150,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'object',
+        properties: {
+          plainLanguage: { type: 'string' },
+        },
+        required: ['plainLanguage'],
+      },
+    },
+  }
+}
+
+export async function callGeminiForDailyLogSummary(
+  log: DailyLogPayload,
+  transport: GeminiTransport = postJson,
+) {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) {
+    throw new GeminiApiError('insight generation is not configured')
+  }
+
+  const model = normalizeModelName(process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL)
+  const endpoint = new URL(
+    `https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+  )
+
+  try {
+    const response = await transport(endpoint, buildDailyLogSummaryRequest(log), GEMINI_REQUEST_TIMEOUT_MS)
+
+    if (!response.ok) {
+      throw new GeminiApiError('Gemini API request failed')
+    }
+
+    const rawText = extractGeminiText(response.data)
+    const parsed = JSON.parse(stripJsonFence(rawText))
+    if (!isPlainObject(parsed)) {
+      throw new Error('malformed daily log summary response')
+    }
+
+    const plainLanguage = parsed.plainLanguage
+    if (typeof plainLanguage !== 'string') {
+      throw new Error('malformed daily log summary response')
+    }
+
+    if (unsafeTextPatterns().some((pattern) => pattern.test(plainLanguage))) {
+      throw new UnsafeGeminiOutputError()
+    }
+
+    return plainLanguage.trim()
+  } catch (error) {
+    if (error instanceof GeminiApiError || error instanceof UnsafeGeminiOutputError) {
+      throw error
+    }
     throw new GeminiApiError('Gemini API request failed')
   }
 }
