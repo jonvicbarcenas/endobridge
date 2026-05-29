@@ -2,7 +2,7 @@ import { ClipboardList, FileText, FlaskConical, Upload } from 'lucide-react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Field, Panel, PrimaryButton, StatusBadge, fieldControlClass } from '../components/ui'
+import { Field, Panel, PrimaryButton, SecondaryButton, StatusBadge, fieldControlClass } from '../components/ui'
 import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
 import { calculateBmi } from '../engines/measurementEngine'
 import { validateLabSessionInput } from '../engines/validationEngine'
@@ -13,6 +13,16 @@ import type { ExtractedBiomarkerValue, LabDocumentRecord } from '../types/monito
 import type { BiomarkerInputMap, BiomarkerKey, LabSessionInput } from '../types/session'
 
 const initialBiomarkers: Record<BiomarkerKey, string> = {
+  ldlC: '',
+  fastingGlucose: '',
+  fastingInsulin: '',
+  totalTestosterone: '',
+  amh: '',
+  lhFshRatio: '',
+  dheas: '',
+}
+
+const sampleBiomarkers: Record<BiomarkerKey, string> = {
   ldlC: '130',
   fastingGlucose: '96',
   fastingInsulin: '15',
@@ -42,13 +52,15 @@ function buildInput({
     heightCm: Number(heightCm),
   })
   const biomarkers = Object.fromEntries(
-    mandatoryBiomarkers.map((key) => [
-      key,
-      {
-        value: Number(biomarkerValues[key]),
-        unit: referenceRanges[key].unit,
-      },
-    ]),
+    mandatoryBiomarkers
+      .filter((key) => biomarkerValues[key].trim())
+      .map((key) => [
+        key,
+        {
+          value: Number(biomarkerValues[key]),
+          unit: referenceRanges[key].unit,
+        },
+      ]),
   ) as BiomarkerInputMap
 
   return {
@@ -57,7 +69,7 @@ function buildInput({
     weightKg: weightKg.trim() ? Number(weightKg) : undefined,
     heightCm: heightCm.trim() ? Number(heightCm) : undefined,
     labDocumentIds,
-    cycleRegularity,
+    cycleRegularity: cycleRegularity || undefined,
     biomarkers,
   }
 }
@@ -88,10 +100,10 @@ export function LabEntryPage() {
   const navigate = useNavigate()
   const { api, token } = useAuth()
   const { setDraft } = useSessionDraft()
-  const [age, setAge] = useState('28')
-  const [weightKg, setWeightKg] = useState('68')
-  const [heightCm, setHeightCm] = useState('160')
-  const [cycleRegularity, setCycleRegularity] = useState('irregular')
+  const [age, setAge] = useState('')
+  const [weightKg, setWeightKg] = useState('')
+  const [heightCm, setHeightCm] = useState('')
+  const [cycleRegularity, setCycleRegularity] = useState('')
   const [biomarkerValues, setBiomarkerValues] = useState(initialBiomarkers)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [documents, setDocuments] = useState<LabDocumentRecord[]>([])
@@ -202,6 +214,15 @@ export function LabEntryPage() {
     setUploadMessage('Extracted biomarker values were copied into the form for review.')
   }
 
+  function loadSampleData() {
+    setAge('28')
+    setWeightKg('68')
+    setHeightCm('160')
+    setCycleRegularity('irregular')
+    setBiomarkerValues(sampleBiomarkers)
+    setSubmitAttempted(false)
+  }
+
   return (
     <form className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]" onSubmit={submitLabEntry}>
       <Panel eyebrow="Module 1" title="Lab result entry">
@@ -260,7 +281,8 @@ export function LabEntryPage() {
               aria-label="BMI auto-calculated"
               className={`${fieldControlClass} bg-slate-50 text-slate-600`}
               readOnly
-              value={input.bmi ? String(input.bmi) : 'Enter kg and cm'}
+              placeholder="Auto-calculates from kg and cm"
+              value={input.bmi ? String(input.bmi) : ''}
             />
           </Field>
         </div>
@@ -273,6 +295,7 @@ export function LabEntryPage() {
               onChange={(event) => setCycleRegularity(event.target.value)}
               value={cycleRegularity}
             >
+              <option value="">Select cycle regularity</option>
               <option value="regular">Regular</option>
               <option value="irregular">Irregular</option>
               <option value="missed">Missed</option>
@@ -288,6 +311,7 @@ export function LabEntryPage() {
             const plausibilityError = validation.errors.includes(`${key} is outside plausibility bounds`)
             const error = fieldError(key) ?? (plausibilityError ? `${range.label} needs review.` : undefined)
             const isFlagged = Boolean(entry?.isFlagged)
+            const hasValue = biomarkerValues[key].trim().length > 0
 
             return (
               <Field error={error} key={key} label={`${range.label} (${range.unit})`}>
@@ -304,9 +328,11 @@ export function LabEntryPage() {
                     type="number"
                     value={biomarkerValues[key]}
                   />
-                  <StatusBadge tone={error ? 'danger' : isFlagged ? 'warning' : 'success'}>
-                    {rangeLabel(entry?.direction)}
-                  </StatusBadge>
+                  {hasValue ? (
+                    <StatusBadge tone={error ? 'danger' : isFlagged ? 'warning' : 'success'}>
+                      {rangeLabel(entry?.direction)}
+                    </StatusBadge>
+                  ) : null}
                 </div>
               </Field>
             )
@@ -330,6 +356,9 @@ export function LabEntryPage() {
               biomarker values. Review extracted values before saving them to a lab session.
             </p>
           </div>
+          <SecondaryButton className="mt-4 w-full" onClick={loadSampleData} type="button">
+            Load sample data
+          </SecondaryButton>
           <label className="mt-4 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-within:ring-4 focus-within:ring-slate-200">
             <Upload size={17} />
             Upload lab result
