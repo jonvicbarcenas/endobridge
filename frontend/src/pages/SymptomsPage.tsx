@@ -16,6 +16,7 @@ import {
   symptomDefinitions,
   symptomSeverityOptions,
 } from '../config/symptoms'
+import { buildSessionSymptomHistory } from '../engines/symptomHistoryEngine'
 import { buildSymptomTrendSummary } from '../engines/symptomTrendEngine'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
@@ -108,6 +109,7 @@ export function SymptomsPage() {
   const selectedSession =
     sessions.find((session) => session.sessionId === selectedSessionId) ?? sessions[0] ?? null
   const trendSummary = buildSymptomTrendSummary(sessions, symptoms)
+  const symptomHistory = buildSessionSymptomHistory(sessions, symptoms)
   const severeCount = symptoms.filter((symptom) => symptom.severity === 'severe').length
   const moderateCount = symptoms.filter((symptom) => symptom.severity === 'moderate').length
 
@@ -346,15 +348,11 @@ export function SymptomsPage() {
       </Panel>
 
       <Panel title="Symptom history">
-        {symptoms.length === 0 ? (
-          <p className="text-sm text-slate-600">No symptom logs are stored yet.</p>
+        {sessions.length === 0 ? (
+          <p className="text-sm text-slate-600">No sessions are available for symptom history yet.</p>
         ) : (
           <div className="space-y-4">
-            {sessions.map((session) => {
-              const sessionSymptoms = symptomsForSession(symptoms, session.sessionId)
-
-              if (sessionSymptoms.length === 0) return null
-
+            {symptomHistory.map(({ rows, session }) => {
               return (
                 <article className="rounded-[14px] border border-slate-200 bg-slate-50 p-4" key={session.sessionId}>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -375,21 +373,29 @@ export function SymptomsPage() {
                     </Link>
                   </div>
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {sessionSymptoms.map((symptom) => (
-                      <div className="rounded-[12px] bg-white p-3" key={symptom.entryId}>
+                    {rows.map((symptom) => (
+                      <div className="rounded-[12px] bg-white p-3" key={symptom.symptomKey}>
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-sm font-medium text-slate-900">
-                            {
-                              symptomDefinitions.find(
-                                (definition) => definition.key === symptom.symptomKey,
-                              )?.label
-                            }
+                            {symptom.label}
                           </p>
-                          <SymptomSeverityBadge severity={symptom.severity} />
+                          {symptom.severity ? (
+                            <SymptomSeverityBadge severity={symptom.severity} />
+                          ) : (
+                            <StatusBadge tone="neutral">Not logged</StatusBadge>
+                          )}
                         </div>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          {symptom.description}
+                        </p>
                         {symptom.note ? (
                           <p className="mt-2 text-sm leading-6 text-slate-600">{symptom.note}</p>
                         ) : null}
+                        <p className="mt-2 text-xs text-slate-500">
+                          {symptom.loggedAt
+                            ? `Recorded ${formatDate(symptom.loggedAt)}`
+                            : 'No saved entry for this category in this session.'}
+                        </p>
                       </div>
                     ))}
                   </div>
