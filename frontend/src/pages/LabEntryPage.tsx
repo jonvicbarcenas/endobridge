@@ -22,16 +22,6 @@ const initialBiomarkers: Record<BiomarkerKey, string> = {
   dheas: '',
 }
 
-const sampleBiomarkers: Record<BiomarkerKey, string> = {
-  ldlC: '130',
-  fastingGlucose: '96',
-  fastingInsulin: '15',
-  totalTestosterone: '54',
-  amh: '7.2',
-  lhFshRatio: '2.2',
-  dheas: '250',
-}
-
 function buildInput({
   age,
   heightCm,
@@ -214,14 +204,7 @@ export function LabEntryPage() {
     setUploadMessage('Extracted biomarker values were copied into the form for review.')
   }
 
-  function loadSampleData() {
-    setAge('28')
-    setWeightKg('68')
-    setHeightCm('160')
-    setCycleRegularity('irregular')
-    setBiomarkerValues(sampleBiomarkers)
-    setSubmitAttempted(false)
-  }
+
 
   return (
     <form className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]" onSubmit={submitLabEntry}>
@@ -356,9 +339,6 @@ export function LabEntryPage() {
               biomarker values. Review extracted values before saving them to a lab session.
             </p>
           </div>
-          <SecondaryButton className="mt-4 w-full" onClick={loadSampleData} type="button">
-            Load sample data
-          </SecondaryButton>
           <label className="mt-4 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-within:ring-4 focus-within:ring-slate-200">
             <Upload size={17} />
             Upload lab result

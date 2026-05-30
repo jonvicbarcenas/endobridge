@@ -24,6 +24,7 @@ import type { LabSession, SymptomEntry, SymptomKey, SymptomSeverity } from '../t
 
 type SymptomFormValues = Record<SymptomKey, SymptomSeverity>
 type SymptomNotes = Record<SymptomKey, string>
+type StoredSymptomEntry = SymptomEntry & { recordId?: string }
 
 function createId(prefix: string) {
   if (globalThis.crypto?.randomUUID) {
@@ -100,7 +101,7 @@ function activeSymptomCount(symptoms: SymptomEntry[]) {
 export function SymptomsPage() {
   const { api, token } = useAuth()
   const [sessions, setSessions] = useState<LabSession[]>([])
-  const [symptoms, setSymptoms] = useState<SymptomEntry[]>([])
+  const [symptoms, setSymptoms] = useState<StoredSymptomEntry[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState('')
   const [values, setValues] = useState<SymptomFormValues>(() => defaultSymptomValues())
   const [notes, setNotes] = useState<SymptomNotes>(() => defaultSymptomNotes())
@@ -118,8 +119,12 @@ export function SymptomsPage() {
 
     Promise.all([
       api.listRecordData<LabSession>(token, 'lab-sessions'),
-      api.listRecordData<SymptomEntry>(token, 'symptoms'),
-    ]).then(([nextSessions, nextSymptoms]) => {
+      api.listRecords<SymptomEntry>(token, 'symptoms'),
+    ]).then(([nextSessions, symptomRecords]) => {
+      const nextSymptoms = symptomRecords.records.map((record) => ({
+        ...record.data,
+        recordId: record.id,
+      }))
       const sortedSessions = sortSessionsNewestFirst(nextSessions)
       const firstSessionId = sortedSessions[0]?.sessionId ?? ''
       setSessions(sortedSessions)
@@ -159,23 +164,27 @@ export function SymptomsPage() {
     if (!selectedSession || !token) return
 
     const timestamp = new Date().toISOString()
-    const entries = symptomDefinitions.map(({ key }) => ({
-      entryId: createId(`symptom-${key}`),
-      sessionId: selectedSession.sessionId,
-      symptomKey: key,
-      severity: values[key],
-      note: values[key] === 'none' ? null : notes[key].trim() || null,
-      timestamp,
-    }))
+    const entries: SymptomEntry[] = symptomDefinitions.map(({ key }) => {
+      const entryId = createId(`symptom-${key}`)
+
+      return {
+        entryId,
+        sessionId: selectedSession.sessionId,
+        symptomKey: key,
+        severity: values[key],
+        note: values[key] === 'none' ? null : notes[key].trim() || null,
+        timestamp,
+      }
+    })
 
     const previousEntries = symptoms.filter((symptom) => symptom.sessionId === selectedSession.sessionId)
     await Promise.all([
-      ...previousEntries.map((entry) => api.deleteRecord(token, 'symptoms', entry.entryId)),
+      ...previousEntries.map((entry) => api.deleteRecord(token, 'symptoms', entry.recordId ?? entry.entryId)),
       ...entries.map((entry) => api.createRecord(token, 'symptoms', entry)),
     ])
     const nextSymptoms = [
       ...symptoms.filter((symptom) => symptom.sessionId !== selectedSession.sessionId),
-      ...entries,
+      ...entries.map((entry) => ({ ...entry, recordId: entry.entryId })),
     ]
     setSymptoms(nextSymptoms)
     setValues(valuesForSession(nextSymptoms, selectedSession.sessionId))
