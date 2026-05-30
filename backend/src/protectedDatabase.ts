@@ -128,17 +128,17 @@ function verifyPassword(password: string, storedHash: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual)
 }
 
-function dataRecordId(data: unknown) {
+export function dataRecordId(data: unknown) {
   if (!data || typeof data !== 'object') return randomUUID()
 
   const value = data as Record<string, unknown>
   const id =
-    value.sessionId ??
     value.entryId ??
     value.medId ??
     value.logId ??
     value.documentId ??
     value.reportId ??
+    value.sessionId ??
     value.id
 
   return typeof id === 'string' && id.trim() ? id : randomUUID()

@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
-import { protectedDatabase } from './protectedDatabase'
+
+let protectedDatabase: typeof import('./protectedDatabase').protectedDatabase
+
+beforeAll(async () => {
+  vi.stubEnv('ENDOBRIDGE_DATABASE_DRIVER', 'file')
+  protectedDatabase = (await import('./protectedDatabase')).protectedDatabase
+})
 
 describe('protectedDatabase scaffold', () => {
   it('keeps monitoring records account-scoped and supports deletion logs', async () => {
