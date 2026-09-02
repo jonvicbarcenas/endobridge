@@ -6,9 +6,16 @@ export interface UserRecord {
 }
 
 export interface SessionRecord {
-  token: string
+  tokenHash: string
   userId: string
   createdAt: string
+  expiresAt: string | Date
+}
+
+export interface RateLimitRecord {
+  key: string
+  count: number
+  expiresAt: string
 }
 
 export interface TermsAcceptanceRecord {

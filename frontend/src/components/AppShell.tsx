@@ -12,7 +12,7 @@ import {
   X,
   HeartPulse,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 
@@ -94,12 +94,68 @@ export function AppShell() {
   const { logout, user } = useAuth()
   const { pathname } = useLocation()
   const [isMobileNavOpen, setMobileNavOpen] = useState(false)
+  const backgroundContentRef = useRef<HTMLDivElement>(null)
+  const mobileNavRef = useRef<HTMLElement>(null)
+  const openNavButtonRef = useRef<HTMLButtonElement>(null)
+  const closeNavButtonRef = useRef<HTMLButtonElement>(null)
   const meta = pathname.startsWith('/history/')
     ? {
         title: 'Session Detail',
         description: 'Review one monitoring session and generate a bounded observational report.',
       }
     : (pageMeta[pathname] ?? pageMeta['/dashboard'])
+
+  useEffect(() => {
+    document.title = `${meta.title} | EndoBridge`
+  }, [meta.title])
+
+  useEffect(() => {
+    if (!isMobileNavOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    const backgroundContent = backgroundContentRef.current
+    const openNavButton = openNavButtonRef.current
+    document.body.style.overflow = 'hidden'
+    backgroundContent?.setAttribute('inert', '')
+    closeNavButtonRef.current?.focus()
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setMobileNavOpen(false)
+        return
+      }
+
+      if (event.key !== 'Tab') return
+
+      const focusableElements = Array.from(
+        mobileNavRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => !element.hasAttribute('hidden'))
+
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements.at(-1)
+      if (!firstElement || !lastElement) return
+
+      if (event.shiftKey && document.activeElement === firstElement) {
+        event.preventDefault()
+        lastElement.focus()
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        event.preventDefault()
+        firstElement.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = previousOverflow
+      backgroundContent?.removeAttribute('inert')
+      openNavButton?.focus()
+    }
+  }, [isMobileNavOpen])
 
   return (
     <main className="min-h-screen bg-[#f6f8fb] text-slate-950">
@@ -111,14 +167,27 @@ export function AppShell() {
         </aside>
 
         {isMobileNavOpen ? (
-          <div className="fixed inset-0 z-40 bg-slate-950/35 lg:hidden">
-            <aside className="flex h-full w-[min(88vw,320px)] flex-col bg-white shadow-xl">
+          <div
+            className="fixed inset-0 z-40 bg-slate-950/40 lg:hidden"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setMobileNavOpen(false)
+            }}
+          >
+            <aside
+              aria-label="Mobile navigation"
+              aria-modal="true"
+              className="flex h-full w-[min(88vw,320px)] flex-col bg-white shadow-xl"
+              id="mobile-navigation-dialog"
+              ref={mobileNavRef}
+              role="dialog"
+            >
               <div className="flex items-center justify-between border-b border-slate-200 pr-3">
                 <BrandBlock compact />
                 <button
                   aria-label="Close navigation"
-                  className="flex size-11 items-center justify-center rounded-[10px] text-slate-600 hover:bg-slate-100"
+                  className="flex size-11 items-center justify-center rounded-[10px] text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                   onClick={() => setMobileNavOpen(false)}
+                  ref={closeNavButtonRef}
                   type="button"
                 >
                   <X size={20} />
@@ -130,13 +199,20 @@ export function AppShell() {
           </div>
         ) : null}
 
-        <div className="min-w-0 lg:pl-[280px]">
+        <div
+          aria-hidden={isMobileNavOpen || undefined}
+          className="min-w-0 lg:pl-[280px]"
+          ref={backgroundContentRef}
+        >
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur lg:hidden">
             <div className="flex min-h-16 items-center justify-between gap-3 px-4">
               <button
+                aria-controls="mobile-navigation-dialog"
+                aria-expanded={isMobileNavOpen}
                 aria-label="Open navigation"
-                className="flex size-11 items-center justify-center rounded-[10px] border border-slate-200 text-slate-700"
+                className="flex size-11 items-center justify-center rounded-[10px] border border-slate-200 text-slate-700 focus:outline-none focus:ring-4 focus:ring-indigo-100"
                 onClick={() => setMobileNavOpen(true)}
+                ref={openNavButtonRef}
                 type="button"
               >
                 <Menu size={20} />

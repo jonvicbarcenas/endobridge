@@ -1,16 +1,28 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { createHash } from 'node:crypto'
 import {
   GeminiApiError,
   UnsafeGeminiOutputError,
   callGemini,
   parseGeminiReport,
-  validateSynthesisPayload,
   callGeminiForDailyLogSummary,
+  validateSynthesisPayload,
 } from './generate-insight.js'
-import { authenticate, readJson, sendJson } from '../src/http.js'
+import { authenticate, bearerToken, readJson, sendJson } from '../src/http.js'
 import { scanLabDocument } from '../src/labDocumentScanner.js'
-import { isMonitoringCollection, protectedDatabase } from '../src/protectedDatabase.js'
+import {
+  MonitoringValidationError,
+  validateCredentialsRequest,
+  validateMonitoringRecord,
+  validateReportRequest,
+  validateScanRequest,
+  validateTermsRequest,
+} from '../src/monitoringSchemas.js'
+import { dataRecordId, isMonitoringCollection, protectedDatabase } from '../src/protectedDatabase.js'
+import { scoreSession } from '../../frontend/src/engines/scoringEngine.js'
+import type { DailyLogRecord, LabDocumentRecord } from '../../frontend/src/types/monitoring.js'
 import type { LabSession } from '../../frontend/src/types/session.js'
+import type { SymptomEntry } from '../../frontend/src/types/session.js'
 
 const collectionByPath = new Map<string, string>([
   ['lab-sessions', 'labSessions'],
@@ -24,6 +36,21 @@ const collectionByPath = new Map<string, string>([
   ['reports', 'reports'],
   ['lab-documents', 'labDocuments'],
 ])
+
+class RateLimitExceededError extends Error {}
+
+function requestClientKey(req: IncomingMessage) {
+  const forwardedFor = req.headers['x-forwarded-for']
+  const address = Array.isArray(forwardedFor)
+    ? forwardedFor[0]
+    : forwardedFor?.split(',')[0].trim() || req.socket.remoteAddress || 'anonymous'
+  return createHash('sha256').update(address).digest('hex')
+}
+
+async function enforceRateLimit(key: string, action: string, maxRequests: number, windowMs: number) {
+  const allowed = await protectedDatabase.consumeRateLimit(key, action, maxRequests, windowMs)
+  if (!allowed) throw new RateLimitExceededError('too many requests')
+}
 
 function pathParts(req: IncomingMessage) {
   const url = new URL(req.url ?? '/', 'http://localhost')
@@ -52,16 +79,21 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     if (scope === 'auth' && action === 'register') {
       requirePost(req)
-      const body = (await readJson(req)) as { email?: string; password?: string }
-      const user = await protectedDatabase.createUser(body.email ?? '', body.password ?? '')
+      const body = validateCredentialsRequest(await readJson(req))
+      await enforceRateLimit(requestClientKey(req), 'register', 5, 60 * 60 * 1000)
+      const user = await protectedDatabase.createUser(body.email, body.password)
       sendJson(res, 201, { user })
       return
     }
 
     if (scope === 'auth' && action === 'login') {
       requirePost(req)
-      const body = (await readJson(req)) as { email?: string; password?: string }
-      sendJson(res, 200, await protectedDatabase.createSession(body.email ?? '', body.password ?? ''))
+      const body = validateCredentialsRequest(await readJson(req))
+      const loginKey = createHash('sha256')
+        .update(`${requestClientKey(req)}:${body.email.trim().toLowerCase()}`)
+        .digest('hex')
+      await enforceRateLimit(loginKey, 'login', 10, 15 * 60 * 1000)
+      sendJson(res, 200, await protectedDatabase.createSession(body.email, body.password))
       return
     }
 
@@ -76,9 +108,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return
     }
 
+    if (scope === 'auth' && action === 'logout') {
+      requirePost(req)
+      await protectedDatabase.revokeSession(bearerToken(req))
+      sendJson(res, 200, { loggedOut: true })
+      return
+    }
+
     if (scope === 'terms' && action === 'accept') {
       requirePost(req)
-      sendJson(res, 201, await protectedDatabase.acceptTerms(user.userId, (await readJson(req)) as object))
+      sendJson(res, 201, await protectedDatabase.acceptTerms(user.userId, validateTermsRequest(await readJson(req))))
       return
     }
 
@@ -88,11 +127,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         sendJson(res, 403, { error: 'terms acceptance required' })
         return
       }
-      const body = (await readJson(req, 8_000_000)) as { dataUrl?: string }
-      if (!body.dataUrl) {
-        sendJson(res, 400, { error: 'lab result file payload is required' })
-        return
-      }
+      await enforceRateLimit(user.userId, 'lab-document-scan', 3, 60_000)
+      const body = validateScanRequest(await readJson(req, 8_000_000))
       sendJson(res, 200, await scanLabDocument(body.dataUrl))
       return
     }
@@ -115,24 +151,40 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         sendJson(res, 403, { error: 'terms acceptance required' })
         return
       }
+      await enforceRateLimit(user.userId, 'report-generation', 5, 60_000)
 
-      const { synthesis } = validateSynthesisPayload(await readJson(req))
+      const { sessionId } = validateReportRequest(await readJson(req))
       const sessionRecord = (await protectedDatabase.list('labSessions', user.userId)).find(
-        (record) => record.id === synthesis.sessionId,
+        (record) => record.id === sessionId,
       )
       if (!sessionRecord) {
         sendJson(res, 404, { error: 'session not found' })
         return
       }
 
+      const [sessionRecords, symptomRecords, dailyLogRecords, labDocumentRecords] = await Promise.all([
+        protectedDatabase.list('labSessions', user.userId),
+        protectedDatabase.list('symptoms', user.userId),
+        protectedDatabase.list('dailyLogs', user.userId),
+        protectedDatabase.list('labDocuments', user.userId),
+      ])
+      const session = validateMonitoringRecord('labSessions', sessionRecord.data) as LabSession
+      const scoredSynthesis = scoreSession(session, {
+        sessions: sessionRecords.map((record) => validateMonitoringRecord('labSessions', record.data) as LabSession),
+        symptoms: symptomRecords.map((record) => validateMonitoringRecord('symptoms', record.data) as SymptomEntry),
+        dailyLogs: dailyLogRecords.map((record) => validateMonitoringRecord('dailyLogs', record.data) as DailyLogRecord),
+        labDocuments: labDocumentRecords.map(
+          (record) => validateMonitoringRecord('labDocuments', record.data) as LabDocumentRecord,
+        ),
+      })
+      const { synthesis } = validateSynthesisPayload({ synthesis: scoredSynthesis })
       const rawReport = await callGemini(synthesis)
       const report = parseGeminiReport(rawReport, synthesis)
-      const session = sessionRecord.data as LabSession
       const updatedSession: LabSession = { ...session, insightReport: report }
-      await protectedDatabase.update('labSessions', user.userId, synthesis.sessionId, updatedSession)
+      await protectedDatabase.update('labSessions', user.userId, sessionId, updatedSession)
       await protectedDatabase.create('reports', user.userId, {
-        reportId: `report-${synthesis.sessionId}`,
-        sessionId: synthesis.sessionId,
+        reportId: `report-${sessionId}`,
+        sessionId,
         generatedAt: report.reportTimestamp,
         report,
         validationStatus: 'validated',
@@ -161,14 +213,22 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
 
       if (req.method === 'POST') {
-        const data = await readJson(req)
+        const data = validateMonitoringRecord(collectionName, await readJson(req))
         if (collectionName === 'labSessions' && hasNonNullInsightReport(data)) {
           sendJson(res, 403, { error: 'insight reports must be generated through the validated report endpoint' })
           return
         }
         if (collectionName === 'dailyLogs') {
           try {
-            const summary = await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+            const canGenerateSummary = await protectedDatabase.consumeRateLimit(
+              user.userId,
+              'daily-log-summary',
+              10,
+              60_000,
+            )
+            const summary = canGenerateSummary
+              ? await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+              : null
             if (summary && data && typeof data === 'object') {
               ;(data as Record<string, unknown>).plainLanguage = summary
             }
@@ -181,14 +241,26 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
 
       if ((req.method === 'PUT' || req.method === 'PATCH') && recordId) {
-        const data = await readJson(req)
+        const data = validateMonitoringRecord(collectionName, await readJson(req))
+        if (dataRecordId(data) !== recordId) {
+          sendJson(res, 400, { error: 'record id does not match request path' })
+          return
+        }
         if (collectionName === 'labSessions' && hasNonNullInsightReport(data)) {
           sendJson(res, 403, { error: 'insight reports must be generated through the validated report endpoint' })
           return
         }
         if (collectionName === 'dailyLogs') {
           try {
-            const summary = await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+            const canGenerateSummary = await protectedDatabase.consumeRateLimit(
+              user.userId,
+              'daily-log-summary',
+              10,
+              60_000,
+            )
+            const summary = canGenerateSummary
+              ? await callGeminiForDailyLogSummary(data as Record<string, unknown>)
+              : null
             if (summary && data && typeof data === 'object') {
               ;(data as Record<string, unknown>).plainLanguage = summary
             }
@@ -221,8 +293,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       sendJson(res, 405, { error: 'method not allowed' })
       return
     }
-    if (message === 'payload too large') {
+    if (message === 'payload too large' || message === 'lab document exceeds size limit') {
       sendJson(res, 413, { error: 'payload too large' })
+      return
+    }
+    if (error instanceof RateLimitExceededError) {
+      sendJson(res, 429, { error: 'too many requests' })
       return
     }
     if (error instanceof UnsafeGeminiOutputError) {
@@ -233,6 +309,44 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       sendJson(res, 503, { error: 'insight generation is temporarily unavailable' })
       return
     }
-    sendJson(res, 400, { error: message })
+    if (error instanceof MonitoringValidationError) {
+      sendJson(res, 400, { error: error.message })
+      return
+    }
+    if (error instanceof SyntaxError) {
+      sendJson(res, 400, { error: 'invalid JSON request' })
+      return
+    }
+    if (
+      message === 'invalid lab document payload' ||
+      message === 'unsupported lab document type' ||
+      message === 'lab document content does not match its declared type' ||
+      message === 'invalid DOCX archive' ||
+      message === 'DOCX document text exceeds size limit'
+    ) {
+      sendJson(res, 400, { error: 'invalid lab document' })
+      return
+    }
+    if (message === 'account already exists') {
+      sendJson(res, 409, { error: 'account already exists' })
+      return
+    }
+    if (message === 'invalid email or password') {
+      sendJson(res, 401, { error: 'invalid email or password' })
+      return
+    }
+    if (message === 'record not found') {
+      sendJson(res, 404, { error: 'record not found' })
+      return
+    }
+    if (
+      message === 'terms acceptance incomplete' ||
+      message === 'a valid email and an 8-128 character password are required'
+    ) {
+      sendJson(res, 400, { error: message })
+      return
+    }
+    console.error('[api request failed]', error instanceof Error ? error.name : 'Unknown error')
+    sendJson(res, 500, { error: 'request failed' })
   }
 }

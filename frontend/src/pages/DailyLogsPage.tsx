@@ -237,11 +237,16 @@ export function DailyLogsPage() {
           <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
             {/* Horizontal Sub-navigation */}
             <div className="border-b border-slate-100 bg-slate-50/50 p-4 sm:px-6 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
+              <div
+                aria-label="Daily log sections"
+                className="flex flex-wrap items-center gap-2"
+                role="group"
+              >
                 {companionSections.map(({ id, title, icon: Icon }) => {
                   const isActive = activeSection === id
                   return (
                     <button
+                      aria-pressed={isActive}
                       className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
                         isActive
                           ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
@@ -381,9 +386,9 @@ function CompanionHero({
         <ClipboardList size={14} />
         Everyday companion
       </div>
-      <h1 className="mt-4 text-2xl font-semibold leading-8 text-slate-950 sm:text-3xl">
+      <h2 className="mt-4 text-2xl font-semibold leading-8 text-slate-950 sm:text-3xl">
         {editing ? 'Update your daily wellness check-in' : 'How is today going?'}
-      </h1>
+      </h2>
       <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
         Log only what you want to track today. EndoBridge stores these notes as self-monitoring
         context and does not generate treatment, diet, exercise, or medication advice.
@@ -652,7 +657,7 @@ function ChipGroup({
   return (
     <div>
       <p className="mb-2 text-sm font-medium text-slate-700">{label}</p>
-      <div className="flex flex-wrap gap-2">
+      <div aria-label={label} className="flex flex-wrap gap-2" role="group">
         {options.map((option) => {
           const selected = allowMultiple
             ? value
@@ -663,6 +668,7 @@ function ChipGroup({
 
           return (
             <button
+              aria-pressed={selected}
               className={`inline-flex min-h-11 items-center gap-2 rounded-full border px-4 text-sm font-semibold transition ${
                 selected
                   ? 'border-indigo-600 bg-indigo-50 text-indigo-700'

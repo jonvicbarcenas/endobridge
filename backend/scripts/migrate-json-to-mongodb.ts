@@ -7,14 +7,12 @@ import type {
   AccountScopedRecord,
   DataDeletionRecord,
   MonitoringCollection,
-  SessionRecord,
   TermsAcceptanceRecord,
   UserRecord,
 } from '../src/records'
 
 interface FileState {
   users?: UserRecord[]
-  sessions?: SessionRecord[]
   terms?: TermsAcceptanceRecord[]
   monitoring?: Partial<Record<MonitoringCollection, AccountScopedRecord[]>>
   deletions?: DataDeletionRecord[]
@@ -44,12 +42,6 @@ try {
 
   for (const user of state.users ?? []) {
     await db.collection<UserRecord>('users').replaceOne({ userId: user.userId }, user, {
-      upsert: true,
-    })
-  }
-
-  for (const session of state.sessions ?? []) {
-    await db.collection<SessionRecord>('sessions').replaceOne({ token: session.token }, session, {
       upsert: true,
     })
   }

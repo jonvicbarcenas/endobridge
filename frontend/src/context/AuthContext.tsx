@@ -24,12 +24,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTermsAccepted(response.termsAccepted)
   }, [])
 
-  const logout = useCallback(() => {
+  const clearSession = useCallback(() => {
     sessionStorage.removeItem(AUTH_TOKEN_KEY)
     setToken(null)
     setUser(null)
     setTermsAccepted(false)
   }, [])
+
+  const logout = useCallback(async () => {
+    try {
+      if (token) await api.logout(token)
+    } finally {
+      clearSession()
+    }
+  }, [api, clearSession, token])
 
   useEffect(() => {
     if (!token) {
@@ -45,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setTermsAccepted(profile.termsAccepted)
       })
       .catch(() => {
-        if (isMounted) logout()
+        if (isMounted) clearSession()
       })
       .finally(() => {
         if (isMounted) setIsLoading(false)
@@ -54,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false
     }
-  }, [api, logout, token])
+  }, [api, clearSession, token])
 
   const login = useCallback(async (email: string, password: string) => {
     persistSession(await api.login(email, password))

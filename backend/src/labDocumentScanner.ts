@@ -29,6 +29,16 @@ const biomarkerPatterns: Array<{
   { key: 'lhFshRatio', labels: ['LH/FSH ratio', 'LH FSH ratio', 'LH:FSH ratio'] },
   { key: 'dheas', labels: ['DHEAS', 'DHEA-S', 'DHEA sulfate', 'DHEA sulphate'] },
 ]
+const MAX_DOCUMENT_BYTES = 6_000_000
+const MAX_DOCX_XML_BYTES = 2_000_000
+const allowedMimeTypes = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+])
 
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -39,10 +49,32 @@ function decodeDataUrl(dataUrl: string) {
   if (!match?.groups?.payload || !match.groups.mime) {
     throw new Error('invalid lab document payload')
   }
+  if (!allowedMimeTypes.has(match.groups.mime) || !/^[A-Za-z0-9+/]+={0,2}$/.test(match.groups.payload)) {
+    throw new Error('unsupported lab document type')
+  }
+  const buffer = Buffer.from(match.groups.payload, 'base64')
+  if (!buffer.length || buffer.length > MAX_DOCUMENT_BYTES) {
+    throw new Error('lab document exceeds size limit')
+  }
+  assertFileSignature(match.groups.mime, buffer)
   return {
     mimeType: match.groups.mime,
-    buffer: Buffer.from(match.groups.payload, 'base64'),
+    buffer,
   }
+}
+
+function assertFileSignature(mimeType: string, buffer: Buffer) {
+  const valid =
+    (mimeType === 'application/pdf' && buffer.subarray(0, 5).toString('ascii') === '%PDF-') ||
+    (mimeType === 'image/png' && buffer.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) ||
+    (mimeType === 'image/jpeg' && buffer.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))) ||
+    (mimeType === 'image/webp' &&
+      buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      buffer.subarray(8, 12).toString('ascii') === 'WEBP') ||
+    (mimeType === 'text/plain' && !buffer.includes(0)) ||
+    (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' &&
+      buffer.subarray(0, 2).toString('ascii') === 'PK')
+  if (!valid) throw new Error('lab document content does not match its declared type')
 }
 
 function normalizeWhitespace(value: string) {
@@ -134,12 +166,19 @@ function extractTextFromDocx(buffer: Buffer) {
     const dataStart = offset + 30 + fileNameLength + extraLength
     const dataEnd = dataStart + compressedSize
 
+    if (dataStart > buffer.length || dataEnd > buffer.length || dataEnd < dataStart) {
+      throw new Error('invalid DOCX archive')
+    }
+
     if (fileName === 'word/document.xml') {
       const compressed = buffer.subarray(dataStart, dataEnd)
       const xml =
         compression === 8
-          ? inflateRawSync(compressed).toString('utf8')
+          ? inflateRawSync(compressed, { maxOutputLength: MAX_DOCX_XML_BYTES }).toString('utf8')
           : compressed.toString('utf8')
+      if (Buffer.byteLength(xml, 'utf8') > MAX_DOCX_XML_BYTES) {
+        throw new Error('DOCX document text exceeds size limit')
+      }
       return stripXmlText(xml)
     }
 
@@ -187,8 +226,7 @@ export async function scanLabDocument(dataUrl: string): Promise<LabDocumentScanR
   const isImage = mimeType.startsWith('image/')
   const isText = mimeType === 'text/plain'
   const isDocx =
-    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-    mimeType === 'application/msword'
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   let result: {
     text: string
     sourceLabel: string

@@ -119,6 +119,10 @@ export class BackendAPIService {
     })
   }
 
+  logout(token: string) {
+    return request<{ loggedOut: true }>('/auth/logout', { method: 'POST', token })
+  }
+
   scanLabDocument<T>(token: string, dataUrl: string) {
     return request<T>('/lab-documents/scan', {
       method: 'POST',
@@ -127,11 +131,11 @@ export class BackendAPIService {
     })
   }
 
-  generateReport<T>(token: string, synthesis: unknown) {
+  generateReport<T>(token: string, sessionId: string) {
     return request<T>('/reports/generate', {
       method: 'POST',
       token,
-      body: JSON.stringify({ synthesis }),
+      body: JSON.stringify({ sessionId }),
     })
   }
 }

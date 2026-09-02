@@ -3,9 +3,7 @@ import {
   buildGeminiRequest,
   callGemini,
   extractGeminiText,
-  isRateLimited,
   parseGeminiReport,
-  resetRateLimitForTests,
   validateSynthesisPayload,
   buildDailyLogSummaryRequest,
   callGeminiForDailyLogSummary,
@@ -62,7 +60,6 @@ const synthesis: SynthesisOutput = {
 
 describe('Gemini insight proxy helpers', () => {
   afterEach(() => {
-    resetRateLimitForTests()
     vi.unstubAllEnvs()
     vi.unstubAllGlobals()
   })
@@ -163,19 +160,6 @@ describe('Gemini insight proxy helpers', () => {
         ],
       }),
     ).toBe('{"observationalSummary":"ok","observations":[],"observationReasons":[]}')
-  })
-
-  it('rate limits repeated proxy requests by client key without storing payloads', () => {
-    const now = Date.parse('2026-05-23T00:00:00.000Z')
-
-    expect(isRateLimited('client-1', now)).toBe(false)
-    expect(isRateLimited('client-1', now + 1)).toBe(false)
-    expect(isRateLimited('client-1', now + 2)).toBe(false)
-    expect(isRateLimited('client-1', now + 3)).toBe(false)
-    expect(isRateLimited('client-1', now + 4)).toBe(false)
-    expect(isRateLimited('client-1', now + 5)).toBe(true)
-    expect(isRateLimited('client-2', now + 5)).toBe(false)
-    expect(isRateLimited('client-1', now + 60_001)).toBe(false)
   })
 
   it('uses the responsive default model and aborts stalled Gemini requests before Vercel timeout', async () => {

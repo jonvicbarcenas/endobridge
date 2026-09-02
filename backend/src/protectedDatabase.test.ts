@@ -9,6 +9,20 @@ beforeAll(async () => {
 })
 
 describe('protectedDatabase scaffold', () => {
+  it('revokes opaque sessions and enforces persistent fixed-window limits', async () => {
+    const email = `session-${randomUUID()}@example.com`
+    await protectedDatabase.createUser(email, 'password-3')
+    const session = await protectedDatabase.createSession(email, 'password-3')
+
+    await expect(protectedDatabase.authenticate(session.token)).resolves.toEqual(session.user)
+    await protectedDatabase.revokeSession(session.token)
+    await expect(protectedDatabase.authenticate(session.token)).rejects.toThrow(/unauthorized/i)
+
+    const key = randomUUID()
+    await expect(protectedDatabase.consumeRateLimit(key, 'test', 1, 60_000)).resolves.toBe(true)
+    await expect(protectedDatabase.consumeRateLimit(key, 'test', 1, 60_000)).resolves.toBe(false)
+  })
+
   it('keeps monitoring records account-scoped and supports deletion logs', async () => {
     const leftEmail = `left-${randomUUID()}@example.com`
     const rightEmail = `right-${randomUUID()}@example.com`

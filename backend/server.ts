@@ -1,7 +1,6 @@
 import './src/env'
 import { createServer } from 'node:http'
 import appHandler from './api/app'
-import insightHandler from './api/generate-insight'
 
 const port = Number(process.env.PORT ?? 3000)
 const allowedOrigin = process.env.FRONTEND_ORIGIN ?? 'http://127.0.0.1:5173'
@@ -19,11 +18,6 @@ const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.statusCode = 204
     res.end()
-    return
-  }
-
-  if ((req.url ?? '').startsWith('/api/generate-insight')) {
-    await insightHandler(req, res)
     return
   }
 

@@ -33,4 +33,14 @@ describe('scanLabDocument', () => {
       expect.objectContaining({ key: 'lhFshRatio', value: 2.2, confidence: 'medium' }),
     )
   })
+
+  it('rejects MIME spoofing and oversized decoded documents', async () => {
+    await expect(
+      scanLabDocument(`data:application/pdf;base64,${Buffer.from('not a pdf').toString('base64')}`),
+    ).rejects.toThrow(/declared type/i)
+
+    await expect(
+      scanLabDocument(`data:text/plain;base64,${Buffer.alloc(6_000_001, 65).toString('base64')}`),
+    ).rejects.toThrow(/size limit/i)
+  })
 })

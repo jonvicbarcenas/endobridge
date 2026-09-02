@@ -6,6 +6,10 @@ import { referenceRanges } from '../config/referenceRanges'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
 import type { DailyLogRecord, LabDocumentRecord } from '../types/monitoring'
+
+function countLabel(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
 import type { LabSession, MedicationRecord, SymptomEntry } from '../types/session'
 
 function exportJson(data: unknown) {
@@ -73,8 +77,10 @@ export function HistoryPage() {
               {sessions.length} stored {sessions.length === 1 ? 'lab session' : 'lab sessions'}
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              {symptoms.length} symptom entries, {medications.length} medication reminders,{' '}
-              {dailyLogs.length} daily logs, and {documents.length} lab result files are stored in your
+              {countLabel(symptoms.length, 'symptom entry', 'symptom entries')},{' '}
+              {countLabel(medications.length, 'medication reminder')},{' '}
+              {countLabel(dailyLogs.length, 'daily log')}, and{' '}
+              {countLabel(documents.length, 'lab result file')} are stored in your
               EndoBridge account.
             </p>
           </div>

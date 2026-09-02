@@ -119,7 +119,7 @@ export function SessionDetailPage() {
 
     try {
       if (!token) return
-      const insightReport = await api.generateReport<InsightReportType>(token, synthesis)
+      const insightReport = await api.generateReport<InsightReportType>(token, session.sessionId)
       const updatedSession = { ...session, insightReport }
       setSession(updatedSession)
       notifyRecordsChanged()

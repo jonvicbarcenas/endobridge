@@ -37,17 +37,35 @@ export function Panel({
 export function Field({
   label,
   error,
+  errorId,
+  required = false,
   children,
 }: {
   label: string
   error?: string
+  errorId?: string
+  required?: boolean
   children: ReactNode
 }) {
   return (
     <label className="block text-sm font-medium text-slate-700">
-      <span className="mb-1 block">{label}</span>
+      <span className="mb-1 block">
+        {label}
+        {required ? (
+          <>
+            <span aria-hidden="true" className="ml-1 text-rose-700">
+              *
+            </span>
+            <span className="sr-only"> required</span>
+          </>
+        ) : null}
+      </span>
       {children}
-      {error ? <span className="mt-1 block text-xs font-medium text-rose-700">{error}</span> : null}
+      {error ? (
+        <span className="mt-1 block text-xs font-medium text-rose-700" id={errorId}>
+          {error}
+        </span>
+      ) : null}
     </label>
   )
 }

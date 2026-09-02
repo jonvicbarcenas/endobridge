@@ -1,13 +1,15 @@
 import './env.js'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 import { MongoClient, type Collection, type Db } from 'mongodb'
 import type {
   AccountScopedRecord,
   AuthenticatedUser,
   DataDeletionRecord,
   MonitoringCollection,
+  RateLimitRecord,
   SessionRecord,
   TermsAcceptanceRecord,
   UserRecord,
@@ -32,6 +34,7 @@ interface ProtectedDatabaseState {
   terms: TermsAcceptanceRecord[]
   monitoring: Record<MonitoringCollection, AccountScopedRecord[]>
   deletions: DataDeletionRecord[]
+  rateLimits: RateLimitRecord[]
 }
 
 interface ProtectedDatabase {
@@ -42,6 +45,8 @@ interface ProtectedDatabase {
     termsAccepted: boolean
   }>
   authenticate(token: string): Promise<AuthenticatedUser>
+  revokeSession(token: string): Promise<void>
+  consumeRateLimit(key: string, action: string, maxRequests: number, windowMs: number): Promise<boolean>
   sessionProfile(token: string): Promise<{ user: AuthenticatedUser; termsAccepted: boolean }>
   acceptTerms(
     userId: string,
@@ -77,9 +82,21 @@ const defaultDatabasePath = resolve(process.cwd(), 'backend', 'data', defaultDat
 const databasePath = process.env.ENDOBRIDGE_DATABASE_PATH
   ? resolve(process.env.ENDOBRIDGE_DATABASE_PATH)
   : defaultDatabasePath
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000
+const scryptAsync = promisify(scrypt)
+const DUMMY_PASSWORD_HASH = `missing-user:${'00'.repeat(64)}`
 
 function now() {
   return new Date().toISOString()
+}
+
+function validRegistration(email: string, password: string) {
+  return (
+    email.length <= 254 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+    password.length >= 8 &&
+    password.length <= 128
+  )
 }
 
 function emptyMonitoring(): Record<MonitoringCollection, AccountScopedRecord[]> {
@@ -97,6 +114,7 @@ function emptyState(): ProtectedDatabaseState {
     terms: [],
     monitoring: emptyMonitoring(),
     deletions: [],
+    rateLimits: [],
   }
 }
 
@@ -110,22 +128,43 @@ function normalizeState(raw: Partial<ProtectedDatabaseState>): ProtectedDatabase
       ...(raw.monitoring ?? {}),
     },
     deletions: raw.deletions ?? [],
+    rateLimits: raw.rateLimits ?? [],
   }
 }
 
-function hashPassword(password: string) {
+async function hashPassword(password: string) {
   const salt = randomUUID()
-  const hash = scryptSync(password, salt, 64).toString('hex')
+  const hash = ((await scryptAsync(password, salt, 64)) as Buffer).toString('hex')
   return `${salt}:${hash}`
 }
 
-function verifyPassword(password: string, storedHash: string) {
+async function verifyPassword(password: string, storedHash: string) {
   const [salt, hash] = storedHash.split(':')
   if (!salt || !hash) return false
 
   const expected = Buffer.from(hash, 'hex')
-  const actual = scryptSync(password, salt, 64)
+  const actual = (await scryptAsync(password, salt, 64)) as Buffer
   return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+function tokenHash(token: string) {
+  return createHash('sha256').update(token).digest('hex')
+}
+
+function sessionExpiry(entry: SessionRecord) {
+  return entry.expiresAt instanceof Date ? entry.expiresAt.getTime() : Date.parse(entry.expiresAt)
+}
+
+function newSession(userId: string) {
+  const token = randomBytes(32).toString('base64url')
+  const createdAt = now()
+  const session: SessionRecord = {
+    tokenHash: tokenHash(token),
+    userId,
+    createdAt,
+    expiresAt: new Date(Date.parse(createdAt) + SESSION_TTL_MS),
+  }
+  return { token, session }
 }
 
 export function dataRecordId(data: unknown) {
@@ -167,8 +206,8 @@ class FileProtectedDatabase implements ProtectedDatabase {
 
   async createUser(email: string, password: string): Promise<AuthenticatedUser> {
     const normalizedEmail = email.trim().toLowerCase()
-    if (!normalizedEmail || password.length < 8) {
-      throw new Error('email and an 8-character password are required')
+    if (!validRegistration(normalizedEmail, password)) {
+      throw new Error('a valid email and an 8-128 character password are required')
     }
 
     if (this.state.users.some((user) => user.email === normalizedEmail)) {
@@ -178,7 +217,7 @@ class FileProtectedDatabase implements ProtectedDatabase {
     const user: UserRecord = {
       userId: randomUUID(),
       email: normalizedEmail,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       createdAt: now(),
     }
 
@@ -189,33 +228,63 @@ class FileProtectedDatabase implements ProtectedDatabase {
 
   async createSession(email: string, password: string) {
     const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail.length > 254 || password.length > 128) {
+      throw new Error('invalid email or password')
+    }
     const user = this.state.users.find((entry) => entry.email === normalizedEmail)
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    const passwordMatches = await verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
+    if (!user || !passwordMatches) {
       throw new Error('invalid email or password')
     }
 
-    const session: SessionRecord = {
-      token: randomUUID(),
-      userId: user.userId,
-      createdAt: now(),
-    }
+    const { token, session } = newSession(user.userId)
 
+    this.state.sessions = this.state.sessions.filter((entry) => sessionExpiry(entry) > Date.now())
     this.state.sessions.push(session)
     this.save()
     return {
-      token: session.token,
+      token,
       user: { userId: user.userId, email: user.email },
       termsAccepted: await this.hasAcceptedTerms(user.userId),
     }
   }
 
   async authenticate(token: string): Promise<AuthenticatedUser> {
-    const session = this.state.sessions.find((entry) => entry.token === token)
+    const session = this.state.sessions.find((entry) => entry.tokenHash === tokenHash(token))
     const user = session ? this.state.users.find((entry) => entry.userId === session.userId) : null
-    if (!session || !user) {
+    if (!session || !user || sessionExpiry(session) <= Date.now()) {
+      if (session) {
+        this.state.sessions = this.state.sessions.filter((entry) => entry !== session)
+        this.save()
+      }
       throw new Error('unauthorized')
     }
     return { userId: user.userId, email: user.email }
+  }
+
+  async revokeSession(token: string) {
+    this.state.sessions = this.state.sessions.filter((entry) => entry.tokenHash !== tokenHash(token))
+    this.save()
+  }
+
+  async consumeRateLimit(key: string, action: string, maxRequests: number, windowMs: number) {
+    const currentTime = Date.now()
+    const bucketKey = `${action}:${key}:${Math.floor(currentTime / windowMs)}`
+    this.state.rateLimits = this.state.rateLimits.filter(
+      (entry) => Date.parse(entry.expiresAt) > currentTime,
+    )
+    const existing = this.state.rateLimits.find((entry) => entry.key === bucketKey)
+    if (existing && existing.count >= maxRequests) return false
+    if (existing) existing.count += 1
+    else {
+      this.state.rateLimits.push({
+        key: bucketKey,
+        count: 1,
+        expiresAt: new Date(currentTime + windowMs * 2).toISOString(),
+      })
+    }
+    this.save()
+    return true
   }
 
   async sessionProfile(token: string) {
@@ -351,10 +420,23 @@ class MongoProtectedDatabase implements ProtectedDatabase {
 
   private async ensureIndexes(db: Db) {
     if (!this.indexPromise) {
-      this.indexPromise = Promise.all([
-        db.collection<UserRecord>('users').createIndex({ email: 1 }, { unique: true }),
-        db.collection<SessionRecord>('sessions').createIndex({ token: 1 }, { unique: true }),
-        db.collection<SessionRecord>('sessions').createIndex({ userId: 1 }),
+      this.indexPromise = (async () => {
+        await db.collection<SessionRecord>('sessions').deleteMany({ tokenHash: { $exists: false } })
+        await db.collection<SessionRecord>('sessions').dropIndex('token_1').catch((error: unknown) => {
+          if (!isIndexNotFound(error)) throw error
+        })
+        await Promise.all([
+          db.collection<UserRecord>('users').createIndex({ email: 1 }, { unique: true }),
+          db.collection<SessionRecord>('sessions').createIndex(
+            { tokenHash: 1 },
+            { unique: true, sparse: true },
+          ),
+          db.collection<SessionRecord>('sessions').createIndex({ userId: 1 }),
+          db.collection<SessionRecord>('sessions').createIndex(
+            { expiresAt: 1 },
+            { expireAfterSeconds: 0 },
+          ),
+          db.collection('apiRateLimits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
         db.collection<TermsAcceptanceRecord>('termsAcceptance').createIndex(
           { userId: 1 },
           { unique: true },
@@ -369,7 +451,8 @@ class MongoProtectedDatabase implements ProtectedDatabase {
         ...collections.map((collection) =>
           db.collection<AccountScopedRecord>(collection).createIndex({ userId: 1, createdAt: -1 }),
         ),
-      ]).then(() => undefined)
+        ])
+      })()
     }
     return this.indexPromise
   }
@@ -384,14 +467,14 @@ class MongoProtectedDatabase implements ProtectedDatabase {
 
   async createUser(email: string, password: string): Promise<AuthenticatedUser> {
     const normalizedEmail = email.trim().toLowerCase()
-    if (!normalizedEmail || password.length < 8) {
-      throw new Error('email and an 8-character password are required')
+    if (!validRegistration(normalizedEmail, password)) {
+      throw new Error('a valid email and an 8-128 character password are required')
     }
 
     const user: UserRecord = {
       userId: randomUUID(),
       email: normalizedEmail,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       createdAt: now(),
     }
 
@@ -408,20 +491,20 @@ class MongoProtectedDatabase implements ProtectedDatabase {
   async createSession(email: string, password: string) {
     const db = await this.db()
     const normalizedEmail = email.trim().toLowerCase()
+    if (normalizedEmail.length > 254 || password.length > 128) {
+      throw new Error('invalid email or password')
+    }
     const user = await this.users(db).findOne({ email: normalizedEmail })
-    if (!user || !verifyPassword(password, user.passwordHash)) {
+    const passwordMatches = await verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
+    if (!user || !passwordMatches) {
       throw new Error('invalid email or password')
     }
 
-    const session: SessionRecord = {
-      token: randomUUID(),
-      userId: user.userId,
-      createdAt: now(),
-    }
+    const { token, session } = newSession(user.userId)
 
     await db.collection<SessionRecord>('sessions').insertOne(session)
     return {
-      token: session.token,
+      token,
       user: { userId: user.userId, email: user.email },
       termsAccepted: await this.hasAcceptedTerms(user.userId),
     }
@@ -429,12 +512,41 @@ class MongoProtectedDatabase implements ProtectedDatabase {
 
   async authenticate(token: string): Promise<AuthenticatedUser> {
     const db = await this.db()
-    const session = await db.collection<SessionRecord>('sessions').findOne({ token })
+    const session = await db.collection<SessionRecord>('sessions').findOne({ tokenHash: tokenHash(token) })
     const user = session ? await this.users(db).findOne({ userId: session.userId }) : null
-    if (!session || !user) {
+    if (!session || !user || sessionExpiry(session) <= Date.now()) {
+      if (session) await db.collection<SessionRecord>('sessions').deleteOne({ tokenHash: session.tokenHash })
       throw new Error('unauthorized')
     }
     return { userId: user.userId, email: user.email }
+  }
+
+  async revokeSession(token: string) {
+    await (await this.db()).collection<SessionRecord>('sessions').deleteOne({ tokenHash: tokenHash(token) })
+  }
+
+  async consumeRateLimit(key: string, action: string, maxRequests: number, windowMs: number) {
+    const currentTime = Date.now()
+    const bucketKey = `${action}:${key}:${Math.floor(currentTime / windowMs)}`
+    const collection = (await this.db()).collection<{
+      _id: string
+      count: number
+      expiresAt: Date
+    }>('apiRateLimits')
+    try {
+      const result = await collection.findOneAndUpdate(
+        { _id: bucketKey, count: { $lt: maxRequests } },
+        {
+          $inc: { count: 1 },
+          $setOnInsert: { expiresAt: new Date(currentTime + windowMs * 2) },
+        },
+        { upsert: true, returnDocument: 'after' },
+      )
+      return Boolean(result)
+    } catch (error) {
+      if (isDuplicateKey(error)) return false
+      throw error
+    }
   }
 
   async sessionProfile(token: string) {
@@ -527,15 +639,30 @@ function isDuplicateKey(error: unknown) {
   )
 }
 
+function isIndexNotFound(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (('code' in error && (error as { code?: number }).code === 27) ||
+      ('codeName' in error && (error as { codeName?: string }).codeName === 'IndexNotFound'))
+  )
+}
+
 function createProtectedDatabase(): ProtectedDatabase {
   const mongoUri = process.env.MONGODB_URI
+  const requestedDriver = process.env.ENDOBRIDGE_DATABASE_DRIVER
+  const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.VERCEL)
   const shouldUseMongo =
     Boolean(mongoUri) &&
-    process.env.ENDOBRIDGE_DATABASE_DRIVER !== 'file' &&
-    (process.env.NODE_ENV !== 'test' || process.env.ENDOBRIDGE_DATABASE_DRIVER === 'mongodb')
+    requestedDriver !== 'file' &&
+    (process.env.NODE_ENV !== 'test' || requestedDriver === 'mongodb')
 
   if (shouldUseMongo && mongoUri) {
     return new MongoProtectedDatabase(mongoUri)
+  }
+
+  if (requestedDriver === 'mongodb' || isProduction) {
+    throw new Error('MONGODB_URI is required for protected database storage')
   }
 
   return new FileProtectedDatabase()

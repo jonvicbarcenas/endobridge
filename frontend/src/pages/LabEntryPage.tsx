@@ -1,8 +1,8 @@
 import { ClipboardList, FileText, FlaskConical, Upload } from 'lucide-react'
 import type { ChangeEvent, FormEvent } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Field, Panel, PrimaryButton, SecondaryButton, StatusBadge, fieldControlClass } from '../components/ui'
+import { Field, Panel, PrimaryButton, StatusBadge, fieldControlClass } from '../components/ui'
 import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
 import { calculateBmi } from '../engines/measurementEngine'
 import { validateLabSessionInput } from '../engines/validationEngine'
@@ -71,6 +71,22 @@ function rangeLabel(direction?: string) {
   return 'review value'
 }
 
+function friendlyValidationMessage(message: string) {
+  const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+  const friendly = biomarkerKey
+    ? `${referenceRanges[biomarkerKey].label}${message.slice(biomarkerKey.length)}`
+    : `${message.charAt(0).toUpperCase()}${message.slice(1)}`
+
+  return friendly.endsWith('.') ? friendly : `${friendly}.`
+}
+
+function validationErrorTargetId(message: string) {
+  if (message.startsWith('age')) return 'age'
+
+  const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+  return biomarkerKey ? `biomarker-${biomarkerKey}` : undefined
+}
+
 function createDocumentId() {
   return globalThis.crypto?.randomUUID
     ? `doc-${globalThis.crypto.randomUUID()}`
@@ -99,6 +115,8 @@ export function LabEntryPage() {
   const [documents, setDocuments] = useState<LabDocumentRecord[]>([])
   const [sessionDocumentIds, setSessionDocumentIds] = useState<string[]>([])
   const [uploadMessage, setUploadMessage] = useState('')
+  const ageInputRef = useRef<HTMLInputElement>(null)
+  const biomarkerInputRefs = useRef<Partial<Record<BiomarkerKey, HTMLInputElement | null>>>({})
   const [latestScan, setLatestScan] = useState<{
     fileName: string
     extractedBiomarkers: Partial<Record<BiomarkerKey, ExtractedBiomarkerValue>>
@@ -124,14 +142,28 @@ export function LabEntryPage() {
     if (!submitAttempted) return undefined
 
     const raw = validation.errors.find((error) => error.startsWith(key))
-    return raw?.replace(key, referenceRanges[key].label)
+    return raw ? friendlyValidationMessage(raw) : undefined
+  }
+
+  function focusValidationError(message: string) {
+    if (message.startsWith('age')) {
+      ageInputRef.current?.focus()
+      return
+    }
+
+    const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+    if (biomarkerKey) biomarkerInputRefs.current[biomarkerKey]?.focus()
   }
 
   function submitLabEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSubmitAttempted(true)
 
-    if (!validation.isValid) return
+    if (!validation.isValid) {
+      const firstError = validation.errors[0]
+      queueMicrotask(() => focusValidationError(firstError))
+      return
+    }
 
     setDraft({ input, validation })
     navigate('/questionnaire')
@@ -148,10 +180,13 @@ export function LabEntryPage() {
       'image/webp',
       'text/plain',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
     ]
     if (!supportedTypes.includes(file.type)) {
-      setUploadMessage('Upload a PDF, image, DOCX, DOC, or text lab result file.')
+      setUploadMessage('Upload a PDF, image, DOCX, or text lab result file.')
+      return
+    }
+    if (file.size > 6_000_000) {
+      setUploadMessage('Lab result files must be 6 MB or smaller.')
       return
     }
 
@@ -207,7 +242,11 @@ export function LabEntryPage() {
 
 
   return (
-    <form className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]" onSubmit={submitLabEntry}>
+    <form
+      className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]"
+      noValidate
+      onSubmit={submitLabEntry}
+    >
       <Panel eyebrow="Module 1" title="Lab result entry">
         <div className="flex items-start gap-3">
           <FlaskConical className="mt-1 text-emerald-700" size={22} />
@@ -226,13 +265,27 @@ export function LabEntryPage() {
                 ? 'Age must be at least 18.'
                 : undefined
             }
+            errorId="age-error"
             label="Age"
+            required
           >
             <input
+              aria-describedby={
+                submitAttempted && validation.errors.includes('age must be at least 18')
+                  ? 'age-error'
+                  : undefined
+              }
+              aria-invalid={
+                submitAttempted && validation.errors.includes('age must be at least 18')
+              }
               aria-label="Age"
+              aria-required="true"
               className={fieldControlClass}
+              id="age"
               min={18}
               onChange={(event) => setAge(event.target.value)}
+              ref={ageInputRef}
+              required
               type="number"
               value={age}
             />
@@ -297,17 +350,31 @@ export function LabEntryPage() {
             const hasValue = biomarkerValues[key].trim().length > 0
 
             return (
-              <Field error={error} key={key} label={`${range.label} (${range.unit})`}>
+              <Field
+                error={error}
+                errorId={`biomarker-${key}-error`}
+                key={key}
+                label={`${range.label} (${range.unit})`}
+                required
+              >
                 <div className="flex gap-2">
                   <input
+                    aria-describedby={error ? `biomarker-${key}-error` : undefined}
+                    aria-invalid={Boolean(error)}
                     aria-label={range.label}
+                    aria-required="true"
                     className={fieldControlClass}
+                    id={`biomarker-${key}`}
                     onChange={(event) =>
                       setBiomarkerValues((current) => ({
                         ...current,
                         [key]: event.target.value,
                       }))
                     }
+                    ref={(element) => {
+                      biomarkerInputRefs.current[key] = element
+                    }}
+                    required
                     type="number"
                     value={biomarkerValues[key]}
                   />
@@ -335,7 +402,7 @@ export function LabEntryPage() {
           <div className="flex items-start gap-3">
             <FileText className="mt-1 text-indigo-700" size={20} />
             <p className="text-sm leading-6 text-slate-600">
-              Upload a PDF, lab result photo, DOCX, DOC, or text file to scan for supported
+              Upload a PDF, lab result photo, DOCX, or text file to scan for supported
               biomarker values. Review extracted values before saving them to a lab session.
             </p>
           </div>
@@ -343,7 +410,7 @@ export function LabEntryPage() {
             <Upload size={17} />
             Upload lab result
             <input
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.txt,application/pdf,image/png,image/jpeg,image/webp,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.txt,application/pdf,image/png,image/jpeg,image/webp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               className="sr-only"
               onChange={uploadLabResultFile}
               type="file"
@@ -396,7 +463,7 @@ export function LabEntryPage() {
               {validation.flags.length > 0 ? (
                 <ul className="mt-2 space-y-2 text-sm text-slate-600">
                   {validation.flags.map((flag) => (
-                    <li key={flag}>{flag}</li>
+                    <li key={flag}>{friendlyValidationMessage(flag)}</li>
                   ))}
                 </ul>
               ) : (
@@ -406,11 +473,37 @@ export function LabEntryPage() {
             <div>
               <p className="text-sm font-medium text-slate-900">Blocking errors</p>
               {submitAttempted && validation.errors.length > 0 ? (
-                <ul className="mt-2 space-y-2 text-sm text-rose-700">
-                  {validation.errors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
+                <div aria-live="assertive" role="alert">
+                  <p className="sr-only">
+                    {validation.errors.length} blocking errors found. Focus moved to the first
+                    invalid field.
+                  </p>
+                  <ul className="mt-2 space-y-2 text-sm text-rose-700">
+                    {validation.errors.map((error) => {
+                      const targetId = validationErrorTargetId(error)
+                      const message = friendlyValidationMessage(error)
+
+                      return (
+                        <li key={error}>
+                          {targetId ? (
+                            <a
+                              className="rounded-sm underline decoration-rose-300 underline-offset-2 focus:outline-none focus:ring-4 focus:ring-rose-100"
+                              href={`#${targetId}`}
+                              onClick={(event) => {
+                                event.preventDefault()
+                                focusValidationError(error)
+                              }}
+                            >
+                              {message}
+                            </a>
+                          ) : (
+                            message
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
               ) : (
                 <p className="mt-2 text-sm text-slate-600">
                   Errors will appear here after a blocked submit attempt.

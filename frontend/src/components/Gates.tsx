@@ -1,12 +1,20 @@
 import { HeartPulse, ShieldCheck } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAuth } from '../context/auth'
 import { Field, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from './ui'
 
 export function AuthenticatedGate() {
   const { isLoading, token, termsAccepted } = useAuth()
+
+  useEffect(() => {
+    if (isLoading) {
+      document.title = 'Opening EndoBridge'
+    } else if (token && !termsAccepted) {
+      document.title = 'Terms & Privacy | EndoBridge'
+    }
+  }, [isLoading, termsAccepted, token])
 
   if (isLoading) {
     return (
@@ -29,12 +37,25 @@ function AuthForm() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [confirmPasswordError, setConfirmPasswordError] = useState('')
   const [error, setError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    document.title = mode === 'register' ? 'Create Account | EndoBridge' : 'Log In | EndoBridge'
+  }, [mode])
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
+
+    if (mode === 'register' && password !== confirmPassword) {
+      setConfirmPasswordError('Passwords do not match.')
+      return
+    }
+
+    setConfirmPasswordError('')
     setIsSubmitting(true)
 
     try {
@@ -66,7 +87,9 @@ function AuthForm() {
             <input
               autoComplete="email"
               className={fieldControlClass}
+              maxLength={254}
               onChange={(event) => setEmail(event.target.value)}
+              required
               type="email"
               value={email}
             />
@@ -76,13 +99,45 @@ function AuthForm() {
             label="Password"
           >
             <input
+              aria-label="Password"
               autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
               className={fieldControlClass}
-              onChange={(event) => setPassword(event.target.value)}
+              maxLength={128}
+              minLength={mode === 'register' ? 8 : undefined}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setConfirmPasswordError('')
+              }}
+              required
               type="password"
               value={password}
             />
           </Field>
+
+          {mode === 'register' ? (
+            <Field
+              error={confirmPasswordError || undefined}
+              errorId="confirm-password-error"
+              label="Confirm password"
+            >
+              <input
+                aria-describedby={confirmPasswordError ? 'confirm-password-error' : undefined}
+                aria-invalid={confirmPasswordError ? true : undefined}
+                aria-label="Confirm password"
+                autoComplete="new-password"
+                className={fieldControlClass}
+                maxLength={128}
+                minLength={8}
+                onChange={(event) => {
+                  setConfirmPassword(event.target.value)
+                  setConfirmPasswordError('')
+                }}
+                required
+                type="password"
+                value={confirmPassword}
+              />
+            </Field>
+          ) : null}
 
           {error ? <p className="text-sm text-rose-700">{error}</p> : null}
 
@@ -97,6 +152,8 @@ function AuthForm() {
             <SecondaryButton
               onClick={() => {
                 setError('')
+                setConfirmPassword('')
+                setConfirmPasswordError('')
                 setMode(mode === 'register' ? 'login' : 'register')
               }}
               type="button"
@@ -157,7 +214,7 @@ function TermsGate() {
             </p>
             <p>
               Lab sessions, reports, reminders, uploaded lab result files, and daily logs are stored
-              in your EndoBridge account. PDF, image, DOCX, DOC, and text uploads can be scanned for
+              in your EndoBridge account. PDF, image, DOCX, and text uploads can be scanned for
               supported biomarker values, and extracted values must be reviewed before saving.
             </p>
           </div>
@@ -220,13 +277,14 @@ function ChecklistItem({
 function GateFrame({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-[#f6f8fb] px-4 py-8">
+      <h1 className="sr-only">EndoBridge</h1>
       <section className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-5xl items-center gap-6 lg:grid-cols-[0.85fr_1fr]">
         <div className="hidden lg:block">
           <div className="rounded-[24px] bg-slate-950 p-8 text-white shadow-xl shadow-slate-300">
             <div className="flex size-12 items-center justify-center rounded-[16px] bg-indigo-500">
               <HeartPulse size={26} />
             </div>
-            <h1 className="mt-8 text-3xl font-semibold leading-10">EndoBridge</h1>
+            <p className="mt-8 text-3xl font-semibold leading-10">EndoBridge</p>
             <p className="mt-3 text-sm leading-6 text-slate-300">
               Account-backed PCOS monitoring for lab results, symptoms, medication reminders,
               daily logs, and observational reports.

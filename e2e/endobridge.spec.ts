@@ -42,12 +42,46 @@ async function selectFirstRealOption(locator: Locator) {
   if (options[0]) await locator.selectOption(options[0])
 }
 
+async function completeQuestionnaire(page: import('@playwright/test').Page) {
+  for (let pageIndex = 0; pageIndex < 10; pageIndex += 1) {
+    for (const input of await page.locator('form input[type="number"]').all()) {
+      if (!(await input.inputValue())) await input.fill('1')
+    }
+    for (const input of await page.locator('form input[type="date"]').all()) {
+      if (!(await input.inputValue())) await input.fill('2026-05-01')
+    }
+    for (const select of await page.locator('form select').all()) {
+      if (!(await select.inputValue())) await selectFirstRealOption(select)
+    }
+    for (const checkbox of await page.locator('form input[type="checkbox"]').all()) {
+      if (!(await checkbox.isChecked())) await checkbox.check()
+    }
+    for (const textarea of await page.locator('form textarea').all()) {
+      if (!(await textarea.inputValue())) await textarea.fill('No additional concerns')
+    }
+
+    const nextButton = page.getByRole('button', { name: 'Next section' })
+    if (await nextButton.isVisible()) {
+      await nextButton.click()
+      continue
+    }
+
+    await page.getByRole('button', { name: 'Save session' }).click()
+    return
+  }
+  throw new Error('questionnaire exceeded expected page count')
+}
+
 test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows history', async ({ page }) => {
+  const legacyInsightResponse = await page.request.post('http://127.0.0.1:3100/api/generate-insight', { data: {} })
+  expect(legacyInsightResponse.status()).toBe(401)
+
   await page.goto('/')
 
   await page.getByRole('button', { name: 'Create account' }).click()
   await page.getByLabel('Email address').fill(`e2e-${Date.now()}@example.com`)
-  await page.getByLabel('Password').fill('Password123!')
+  await page.getByLabel('Password', { exact: true }).fill('Password123!')
+  await page.getByLabel('Confirm password').fill('Password123!')
   await page.getByRole('button', { name: 'Create account' }).click()
 
   await expect(page.getByText('Terms, privacy consent, and safety disclaimer')).toBeVisible()
@@ -58,6 +92,14 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
   await page.getByRole('button', { name: 'Accept and continue' }).click()
   await expect(page).toHaveURL(/dashboard/)
 
+  const token = await page.evaluate(() => sessionStorage.getItem('endobridge.sessionToken'))
+  expect(token).toBeTruthy()
+  const invalidRecordResponse = await page.request.post('http://127.0.0.1:3100/api/daily-logs', {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { attackerControlled: true },
+  })
+  expect(invalidRecordResponse.status()).toBe(400)
+
   await page.goto('/lab')
   await page.locator('input[type="file"]').setInputFiles({
     name: 'e2e-lab-result.pdf',
@@ -65,24 +107,15 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
     buffer: pdfBuffer(),
   })
   await expect(page.getByText(/PDF stored|PDF scanned|personal record/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Apply extracted values' }).click()
+  await page.getByLabel('Age').fill('28')
+  await page.getByLabel('AMH').fill('7.2')
+  await page.getByLabel('LH/FSH ratio').fill('1.7')
+  await page.getByLabel('DHEAS').fill('320')
   await page.getByRole('button', { name: 'Continue to questionnaire' }).click()
   await expect(page.getByText('Standard questionnaire')).toBeVisible()
 
-  const numberInputs = page.locator('form input[type="number"]')
-  await numberInputs.nth(0).fill('28')
-  await numberInputs.nth(1).fill('65')
-  await numberInputs.nth(2).fill('160')
-  await page.locator('form input[type="date"]').fill('2026-05-01')
-
-  const selects = await page.locator('form select').all()
-  for (const select of selects) {
-    await selectFirstRealOption(select)
-  }
-
-  const checkboxes = await page.locator('form input[type="checkbox"]').all()
-  if (checkboxes[0]) await checkboxes[0].check()
-
-  await page.getByRole('button', { name: 'Save session' }).click()
+  await completeQuestionnaire(page)
   await expect(page).toHaveURL(/history\//)
   await expect(page.getByText('Questionnaire answers')).toBeVisible()
 
@@ -99,16 +132,19 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
   await expect(page.getByText('Medication reminder saved to your account.')).toBeVisible()
 
   await page.goto('/daily')
-  await page.getByLabel('Food notes').fill('Balanced meals')
-  await page.getByLabel('Exercise').fill('Light walk')
-  await page.getByLabel('Sleep hours').fill('7')
-  await page.getByLabel('Mood').fill('Stable')
-  await page.getByLabel('Stress level (1-10)').fill('3')
+  await page.getByLabel('Symptoms note').fill('Mild fatigue')
   await page.getByRole('button', { name: 'Save daily log' }).click()
   await expect(page.getByText('Daily wellness log saved to your account.')).toBeVisible()
 
   await page.goto('/history')
   await expect(page.getByText('Account history')).toBeVisible()
   await expect(page.getByText(/1 daily logs?/)).toBeVisible()
-  await expect(page.getByText(/1 PDF records?/)).toBeVisible()
+  await expect(page.getByText(/1 lab result file/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Log out' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Log in to EndoBridge' })).toBeVisible()
+  const revokedProfileResponse = await page.request.get('http://127.0.0.1:3100/api/auth/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  expect(revokedProfileResponse.status()).toBe(401)
 })
