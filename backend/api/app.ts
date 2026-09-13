@@ -52,9 +52,35 @@ async function enforceRateLimit(key: string, action: string, maxRequests: number
   if (!allowed) throw new RateLimitExceededError('too many requests')
 }
 
-function pathParts(req: IncomingMessage) {
+function pathParts(req: IncomingMessage): string[] {
+  const query = (req as { query?: Record<string, string | string[]> }).query
+  if (query?.path) {
+    const rawPath = query.path
+    const parts = Array.isArray(rawPath) ? rawPath : rawPath.split('/')
+    const filtered = parts.flatMap((p) => p.split('/')).filter(Boolean)
+    if (filtered.length > 0 && filtered[0] !== '[...path]') return filtered
+  }
+
+  const matchedPath = req.headers['x-matched-path'] ?? req.headers['x-forwarded-uri']
+  if (typeof matchedPath === 'string' && matchedPath.startsWith('/api/')) {
+    const parts = matchedPath.replace(/^\/api\/?/, '').split('?')[0].split('/').filter(Boolean)
+    if (parts.length > 0 && parts[0] !== '[...path]') return parts
+  }
+
   const url = new URL(req.url ?? '/', 'http://localhost')
-  return url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean)
+  const searchPathParams = url.searchParams.getAll('path')
+  if (searchPathParams.length > 0) {
+    const filtered = searchPathParams.flatMap((p) => p.split('/')).filter(Boolean)
+    if (filtered.length > 0 && filtered[0] !== '[...path]') return filtered
+  }
+
+  const pathname = url.pathname.replace(/^\/api\/?/, '')
+  const parts = pathname.split('/').filter(Boolean)
+  if (parts.length > 0 && parts[0] !== '[...path]') {
+    return parts
+  }
+
+  return []
 }
 
 function requirePost(req: IncomingMessage) {
@@ -346,7 +372,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       sendJson(res, 400, { error: message })
       return
     }
-    console.error('[api request failed]', error instanceof Error ? error.name : 'Unknown error')
+    if (message.includes('MONGODB_URI is required')) {
+      console.error('[api request failed: database configuration]', message)
+      sendJson(res, 500, { error: message })
+      return
+    }
+    console.error('[api request failed]', error instanceof Error ? error.stack || error.message : error)
     sendJson(res, 500, { error: 'request failed' })
   }
 }

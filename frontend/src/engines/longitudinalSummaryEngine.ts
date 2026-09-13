@@ -1,5 +1,5 @@
-import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
-import { buildSymptomTrendSummary } from './symptomTrendEngine'
+import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges.js'
+import { buildSymptomTrendSummary } from './symptomTrendEngine.js'
 import type { BiomarkerTrendSummary, LongitudinalSummary, TrendLabel } from '../types/insight'
 import type { BiomarkerEntry, BiomarkerKey, LabSession, SymptomEntry } from '../types/session'
 

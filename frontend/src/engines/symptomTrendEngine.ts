@@ -2,7 +2,7 @@ import {
   getSymptomLabel,
   symptomDefinitions,
   symptomSeverityRank,
-} from '../config/symptoms'
+} from '../config/symptoms.js'
 import type { LabSession, SymptomEntry, SymptomKey, SymptomSeverity } from '../types/session'
 
 export type SymptomTrendLabel =

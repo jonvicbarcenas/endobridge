@@ -78,7 +78,9 @@ interface ProtectedDatabase {
 
 const defaultDatabaseFile =
   process.env.NODE_ENV === 'test' ? 'protected-database.test.json' : 'protected-database.json'
-const defaultDatabasePath = resolve(process.cwd(), 'backend', 'data', defaultDatabaseFile)
+const defaultDatabasePath = process.env.VERCEL
+  ? resolve('/tmp', defaultDatabaseFile)
+  : resolve(process.cwd(), 'backend', 'data', defaultDatabaseFile)
 const databasePath = process.env.ENDOBRIDGE_DATABASE_PATH
   ? resolve(process.env.ENDOBRIDGE_DATABASE_PATH)
   : defaultDatabasePath
@@ -661,14 +663,33 @@ function createProtectedDatabase(): ProtectedDatabase {
     return new MongoProtectedDatabase(mongoUri)
   }
 
-  if (requestedDriver === 'mongodb' || isProduction) {
+  if (requestedDriver === 'mongodb' || (isProduction && requestedDriver !== 'file')) {
     throw new Error('MONGODB_URI is required for protected database storage')
   }
 
   return new FileProtectedDatabase()
 }
 
-export const protectedDatabase = createProtectedDatabase()
+let dbInstance: ProtectedDatabase | null = null
+
+export function getProtectedDatabase(): ProtectedDatabase {
+  if (!dbInstance || process.env.NODE_ENV === 'test') {
+    dbInstance = createProtectedDatabase()
+  }
+  return dbInstance
+}
+
+export function resetProtectedDatabaseForTesting() {
+  dbInstance = null
+}
+
+export const protectedDatabase: ProtectedDatabase = new Proxy({} as ProtectedDatabase, {
+  get(_target, prop, receiver) {
+    const db = getProtectedDatabase()
+    const value = Reflect.get(db, prop, receiver)
+    return typeof value === 'function' ? value.bind(db) : value
+  },
+})
 
 export function isMonitoringCollection(value: string): value is MonitoringCollection {
   return collections.includes(value as MonitoringCollection)

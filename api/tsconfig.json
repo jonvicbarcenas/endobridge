@@ -7,6 +7,8 @@
   "include": [
     "./**/*.ts",
     "../backend/**/*.ts",
-    "../frontend/src/types/**/*.ts"
+    "../frontend/src/types/**/*.ts",
+    "../frontend/src/engines/**/*.ts",
+    "../frontend/src/config/**/*.ts"
   ]
 }
