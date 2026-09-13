@@ -194,14 +194,30 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         protectedDatabase.list('dailyLogs', user.userId),
         protectedDatabase.list('labDocuments', user.userId),
       ])
-      const session = validateMonitoringRecord('labSessions', sessionRecord.data) as LabSession
+      const safeParseRecord = <T>(collection: Parameters<typeof validateMonitoringRecord>[0], data: unknown): T | null => {
+        try {
+          return validateMonitoringRecord(collection, data) as T
+        } catch {
+          if (data && typeof data === 'object') return data as T
+          return null
+        }
+      }
+
+      const session = (safeParseRecord<LabSession>('labSessions', sessionRecord.data) ??
+        sessionRecord.data) as LabSession
       const scoredSynthesis = scoreSession(session, {
-        sessions: sessionRecords.map((record) => validateMonitoringRecord('labSessions', record.data) as LabSession),
-        symptoms: symptomRecords.map((record) => validateMonitoringRecord('symptoms', record.data) as SymptomEntry),
-        dailyLogs: dailyLogRecords.map((record) => validateMonitoringRecord('dailyLogs', record.data) as DailyLogRecord),
-        labDocuments: labDocumentRecords.map(
-          (record) => validateMonitoringRecord('labDocuments', record.data) as LabDocumentRecord,
-        ),
+        sessions: sessionRecords
+          .map((record) => safeParseRecord<LabSession>('labSessions', record.data))
+          .filter((s): s is LabSession => Boolean(s)),
+        symptoms: symptomRecords
+          .map((record) => safeParseRecord<SymptomEntry>('symptoms', record.data))
+          .filter((s): s is SymptomEntry => Boolean(s)),
+        dailyLogs: dailyLogRecords
+          .map((record) => safeParseRecord<DailyLogRecord>('dailyLogs', record.data))
+          .filter((d): d is DailyLogRecord => Boolean(d)),
+        labDocuments: labDocumentRecords
+          .map((record) => safeParseRecord<LabDocumentRecord>('labDocuments', record.data))
+          .filter((doc): doc is LabDocumentRecord => Boolean(doc)),
       })
       const { synthesis } = validateSynthesisPayload({ synthesis: scoredSynthesis })
       const rawReport = await callGemini(synthesis)

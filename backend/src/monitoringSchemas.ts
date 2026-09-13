@@ -2,10 +2,10 @@ import { z } from 'zod'
 import { backendReferenceRanges } from './referenceRanges.js'
 import type { MonitoringCollection } from './records.js'
 
-const idSchema = z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/)
+const idSchema = z.string().trim().min(1).max(200)
 const shortText = z.string().max(500)
 const noteText = z.string().max(4_000)
-const isoDate = z.string().datetime({ offset: true })
+const isoDate = z.string().refine((val) => !isNaN(Date.parse(val)), { message: 'invalid datetime' })
 const nullableIsoDate = isoDate.nullable()
 
 const biomarkerKeys = [
@@ -78,15 +78,15 @@ const labSessionSchema = z
     supplementary: z
       .object({
         age: z.number().int().min(18).max(120),
-        bmi: z.number().finite().min(10).max(100).optional(),
-        weightKg: z.number().finite().min(20).max(500).optional(),
-        heightCm: z.number().finite().min(80).max(250).optional(),
-        labDocumentIds: z.array(idSchema).max(20).optional(),
-        cycleRegularity: shortText.optional(),
+        bmi: z.number().finite().min(10).max(100).nullable().optional(),
+        weightKg: z.number().finite().min(20).max(500).nullable().optional(),
+        heightCm: z.number().finite().min(80).max(250).nullable().optional(),
+        labDocumentIds: z.array(idSchema).max(20).nullable().optional(),
+        cycleRegularity: shortText.nullable().optional(),
       })
-      .strict(),
-    questionnaire: questionnaireSchema.nullable(),
-    insightReport: z.unknown().nullable(),
+      .passthrough(),
+    questionnaire: questionnaireSchema.nullable().optional(),
+    insightReport: z.unknown().nullable().optional(),
   })
   .strict()
 

@@ -131,7 +131,11 @@ export function SessionDetailPage() {
       } else if (error instanceof BackendApiError && error.status === 503) {
         setReportError('Insight generation is temporarily unavailable. Please retry later.')
       } else {
-        setReportError('Insight report could not be generated safely. Please retry later.')
+        setReportError(
+          error instanceof BackendApiError && error.message
+            ? error.message
+            : 'Insight report could not be generated safely. Please retry later.',
+        )
       }
     } finally {
       setIsGeneratingReport(false)
