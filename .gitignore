@@ -17,6 +17,7 @@ dist-ssr
 backend/data/*.json
 test-results
 playwright-report
+*.traineddata
 
 # Editor directories and files
 .vscode/*
