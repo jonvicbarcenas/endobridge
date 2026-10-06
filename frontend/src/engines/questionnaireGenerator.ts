@@ -1,6 +1,20 @@
 import { questionBank, type QuestionDefinition } from '../config/questionBank'
 import type { BiomarkerEntryMap, BiomarkerKey, Direction } from '../types/session'
 
+export type QuestionnaireDraftResponses = Record<string, string | string[]>
+
+export function visibleQuestions(
+  questions: QuestionDefinition[],
+  responses: QuestionnaireDraftResponses,
+): QuestionDefinition[] {
+  const regular = responses['q4-cycle-regularity-3-months'] === 'Yes'
+  return questions.filter((question) => {
+    if (regular && ['q14-missed-periods', 'q15-predictable-periods', 'q16-spotting'].includes(question.id)) return false
+    if (question.id === 'q15-predictable-periods' && responses['q14-missed-periods'] === 'No') return false
+    return true
+  })
+}
+
 export interface FlagTrigger {
   key: BiomarkerKey
   direction: Direction

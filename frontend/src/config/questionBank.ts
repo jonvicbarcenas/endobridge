@@ -20,9 +20,8 @@ export interface QuestionDefinition {
   required: boolean
 }
 
-const androgenBiomarkers: BiomarkerKey[] = ['totalTestosterone', 'dheas']
-const menstrualBiomarkers: BiomarkerKey[] = ['amh', 'lhFshRatio']
-const metabolicBiomarkers: BiomarkerKey[] = ['fastingGlucose', 'fastingInsulin', 'ldlC']
+const androgenBiomarkers: BiomarkerKey[] = ['totalTestosterone']
+const metabolicBiomarkers: BiomarkerKey[] = ['fastingGlucose', 'hba1c', 'totalCholesterol', 'hdlC', 'ldlC', 'triglycerides']
 
 export const questionBank: QuestionDefinition[] = [
   {
@@ -55,9 +54,9 @@ export const questionBank: QuestionDefinition[] = [
   {
     id: 'q4-cycle-regularity-3-months',
     code: 'Q4',
-    label: 'How regular has your menstrual cycle been in the past 3 months?',
+    label: 'In the past 3 months, did your periods usually start 21-35 days apart?',
     type: 'select',
-    options: ['Regular', 'Sometimes irregular', 'Often irregular', 'No period in the past 3 months', 'Not sure'],
+    options: ['Yes', 'No', 'No period in the past 3 months', 'Not sure'],
     level: 'base',
     required: true,
   },
@@ -66,7 +65,7 @@ export const questionBank: QuestionDefinition[] = [
     code: 'Q5',
     label: 'What is your usual cycle length?',
     type: 'select',
-    options: ['Less than 21 days', '21-35 days', 'More than 35 days', 'Irregular / changes often', 'Not sure'],
+    options: ['Less than 21 days', '21-35 days', 'More than 35 days', 'Varies too much to estimate', 'Not sure'],
     level: 'base',
     required: true,
   },
@@ -150,21 +149,19 @@ export const questionBank: QuestionDefinition[] = [
   {
     id: 'q14-missed-periods',
     code: 'Q14',
-    label: 'Have you missed any menstrual periods in the past 3 months?',
+    label: 'In the past 3 months, did an expected period fail to start?',
     type: 'select',
-    options: ['No', 'Yes, missed 1 period', 'Yes, missed 2 or more periods', 'No period in the past 3 months', 'Not sure'],
-    relatedBiomarkers: menstrualBiomarkers,
-    level: 'biomarker-based',
+    options: ['Yes', 'No', 'Not sure'],
+    level: 'base',
     required: true,
   },
   {
     id: 'q15-predictable-periods',
     code: 'Q15',
-    label: 'Do your periods usually come at predictable intervals?',
+    label: 'How many expected periods did you miss in the past 3 months?',
     type: 'select',
-    options: ['Yes', 'Sometimes', 'Rarely', 'No', 'Not sure'],
-    relatedBiomarkers: menstrualBiomarkers,
-    level: 'biomarker-based',
+    options: ['One', 'Two or more', 'Not sure'],
+    level: 'base',
     required: true,
   },
   {
@@ -173,18 +170,16 @@ export const questionBank: QuestionDefinition[] = [
     label: 'Have you experienced spotting or bleeding between periods?',
     type: 'select',
     options: ['No', 'Yes, once', 'Yes, more than once', 'Not sure'],
-    relatedBiomarkers: menstrualBiomarkers,
-    level: 'biomarker-based',
+    level: 'base',
     required: true,
   },
   {
     id: 'q17-cycle-comparison',
     code: 'Q17',
-    label: 'Compared to your previous cycle, how would you describe your current cycle pattern?',
+    label: 'Compared with your previous cycle, did the number of days between period starts change?',
     type: 'select',
-    options: ['More regular', 'About the same', 'More irregular', 'Not sure', 'First time logging'],
-    relatedBiomarkers: menstrualBiomarkers,
-    level: 'biomarker-based',
+    options: ['Shorter', 'About the same', 'Longer', 'Not sure', 'First time logging'],
+    level: 'base',
     required: true,
   },
   {
@@ -203,7 +198,7 @@ export const questionBank: QuestionDefinition[] = [
     label: 'How often have you experienced fatigue recently?',
     type: 'select',
     options: ['Never', 'Rarely', 'Sometimes', 'Often', 'Almost daily'],
-    relatedBiomarkers: ['fastingGlucose', 'fastingInsulin'],
+    relatedBiomarkers: ['fastingGlucose', 'hba1c'],
     level: 'biomarker-based',
     required: true,
   },
@@ -213,7 +208,7 @@ export const questionBank: QuestionDefinition[] = [
     label: 'Have you experienced frequent cravings or increased hunger recently?',
     type: 'select',
     options: ['No', 'Mild', 'Moderate', 'Severe', 'Not sure'],
-    relatedBiomarkers: ['fastingGlucose', 'fastingInsulin'],
+    relatedBiomarkers: ['fastingGlucose', 'hba1c'],
     level: 'biomarker-based',
     required: true,
   },
@@ -223,19 +218,9 @@ export const questionBank: QuestionDefinition[] = [
     label: 'How would you describe your physical activity recently?',
     type: 'select',
     options: ['Mostly inactive', 'Light activity', 'Moderate activity', 'Active', 'Not sure'],
-    relatedBiomarkers: ['ldlC'],
+    relatedBiomarkers: ['totalCholesterol', 'hdlC', 'ldlC', 'triglycerides'],
     level: 'biomarker-based',
     required: true,
-  },
-  {
-    id: 'q22-food-notes',
-    code: 'Q22',
-    label: 'Would you like to add food or meal notes for this session?',
-    type: 'text',
-    purpose: 'Lifestyle context only, not diet recommendation',
-    relatedBiomarkers: metabolicBiomarkers,
-    level: 'biomarker-based',
-    required: false,
   },
   {
     id: 'q23-activity-notes',
@@ -243,34 +228,16 @@ export const questionBank: QuestionDefinition[] = [
     label: 'Would you like to add exercise or activity notes for this session?',
     type: 'text',
     purpose: 'Lifestyle context only, not exercise prescription',
-    relatedBiomarkers: ['ldlC'],
+    relatedBiomarkers: ['totalCholesterol', 'hdlC', 'ldlC', 'triglycerides'],
     level: 'biomarker-based',
     required: false,
   },
   {
     id: 'q24-sleep-hours',
     code: 'Q24',
-    label: 'How many hours of sleep did you usually get recently?',
+    label: 'Over the past 2 weeks, when your sleep duration changed, how did your sleep quality and stress change?',
     type: 'select',
-    options: ['Less than 5 hours', '5-6 hours', '7-8 hours', 'More than 8 hours', 'Varies'],
-    level: 'daily-context',
-    required: false,
-  },
-  {
-    id: 'q25-sleep-quality',
-    code: 'Q25',
-    label: 'How would you rate your sleep quality recently?',
-    type: 'select',
-    options: ['Poor', 'Fair', 'Good', 'Very good', 'Not sure'],
-    level: 'daily-context',
-    required: false,
-  },
-  {
-    id: 'q26-stress-level',
-    code: 'Q26',
-    label: 'How would you describe your stress level recently?',
-    type: 'select',
-    options: ['Low', 'Moderate', 'High', 'Very high', 'Not sure'],
+    options: ['Shorter sleep, poorer quality and more stress', 'Shorter sleep, no noticeable change', 'Longer sleep, better quality and less stress', 'Longer sleep, no noticeable change', 'Sleep duration stayed about the same', 'Not sure'],
     level: 'daily-context',
     required: false,
   },
@@ -286,7 +253,7 @@ export const questionBank: QuestionDefinition[] = [
   {
     id: 'q28-other-symptoms',
     code: 'Q28',
-    label: 'Have you experienced bloating, cramps, cravings, or other PCOS-related symptoms recently?',
+    label: 'Which other symptoms have you noticed recently?',
     type: 'multiselect',
     options: [
       'Bloating',
@@ -312,14 +279,5 @@ export const questionBank: QuestionDefinition[] = [
     options: ['Taken', 'Skipped', 'Missed', 'Not scheduled today'],
     level: 'medication-adherence',
     required: true,
-  },
-  {
-    id: 'q30-medication-note',
-    code: 'Q30',
-    label: 'Would you like to add a note about your medication intake?',
-    type: 'text',
-    purpose: 'Reminder and adherence tracking only',
-    level: 'medication-adherence',
-    required: false,
   },
 ]

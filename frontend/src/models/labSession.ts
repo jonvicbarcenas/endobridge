@@ -22,6 +22,13 @@ export function createLabSession(
     throw new Error('cannot create a lab session from invalid input')
   }
 
+  const timingAnswer = questionnaire?.['q4-cycle-regularity-3-months']
+  const cycleRegularity = timingAnswer === 'Yes' ? 'regular'
+    : timingAnswer === 'No' ? 'irregular'
+    : timingAnswer === 'No period in the past 3 months' ? 'missed'
+    : timingAnswer === 'Not sure' ? 'unknown'
+    : input.cycleRegularity
+
   return {
     sessionId: createId(),
     timestamp: new Date().toISOString(),
@@ -33,7 +40,9 @@ export function createLabSession(
       weightKg: input.weightKg,
       heightCm: input.heightCm,
       labDocumentIds: input.labDocumentIds,
-      cycleRegularity: input.cycleRegularity,
+      cycleRegularity,
+      glucoseTest: input.glucoseTest,
+      panelVersion: input.panelVersion,
     },
     questionnaire,
     insightReport: null,

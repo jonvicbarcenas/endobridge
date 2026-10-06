@@ -1,4 +1,4 @@
-import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges.js'
+import { mandatoryBiomarkers, referenceRanges, requiredNewBiomarkers } from '../config/referenceRanges.js'
 import { summarizeDailyLogsForSynthesis } from './dailyLogInterpretationEngine.js'
 import { buildLongitudinalSummary } from './longitudinalSummaryEngine.js'
 import type { SynthesisOutput } from '../types/insight'
@@ -21,11 +21,14 @@ interface ScoreSessionContext {
 
 const DAILY_LOG_WINDOW_BEFORE_MS = 7 * 24 * 60 * 60 * 1000
 const DAILY_LOG_WINDOW_AFTER_MS = 3 * 24 * 60 * 60 * 1000
+const retiredBiomarkers = new Set<BiomarkerKey>(['amh', 'lhFshRatio', 'dheas'])
 
-function deviationScore(key: BiomarkerKey, value: number) {
+function deviationScore(key: BiomarkerKey, value: number, referenceMin?: number, referenceMax?: number) {
   const range = referenceRanges[key]
-  const midpoint = (range.clinicalMin + range.clinicalMax) / 2
-  const width = Math.max(range.clinicalMax - range.clinicalMin, 1)
+  const min = referenceMin ?? range.clinicalMin
+  const max = referenceMax ?? range.clinicalMax
+  const midpoint = (min + max) / 2
+  const width = Math.max(max - min, 1)
 
   return Number((Math.abs(value - midpoint) / width).toFixed(4))
 }
@@ -44,13 +47,20 @@ function selectDailyLogsForSession(session: LabSession, logs: DailyLogRecord[]) 
 }
 
 export function scoreSession(session: LabSession, context: ScoreSessionContext = {}): SynthesisOutput {
-  const missing = mandatoryBiomarkers.filter((key) => !session.biomarkers[key])
+  const required: readonly BiomarkerKey[] = session.supplementary.panelVersion === 'fixed-ten'
+    ? requiredNewBiomarkers
+    : session.supplementary.glucoseTest
+    ? ['totalCholesterol', 'ldlC', 'hdlC', 'triglycerides', session.supplementary.glucoseTest === 'hba1c' ? 'hba1c' : 'fastingGlucose',
+      ...(session.supplementary.glucoseTest === 'ogtt' ? ['ogttTwoHourGlucose' as const] : [])]
+    : mandatoryBiomarkers
+  const missing = required.filter((key) => !session.biomarkers[key])
 
   if (missing.length > 0) {
     throw new InsufficientDataError(`missing mandatory biomarkers: ${missing.join(', ')}`)
   }
 
-  const flaggedBiomarkers = mandatoryBiomarkers
+  const flaggedBiomarkers = (Object.keys(session.biomarkers) as BiomarkerKey[])
+    .filter((key) => !retiredBiomarkers.has(key))
     .map((key) => {
       const biomarker = session.biomarkers[key]
       if (!biomarker || !biomarker.isFlagged) return null
@@ -59,7 +69,7 @@ export function scoreSession(session: LabSession, context: ScoreSessionContext =
         key,
         value: biomarker.value,
         unit: biomarker.unit,
-        deviationScore: deviationScore(key, biomarker.value),
+        deviationScore: deviationScore(key, biomarker.value, biomarker.referenceMin, biomarker.referenceMax),
         direction: biomarker.direction === 'normal' ? 'high' : biomarker.direction,
       }
     })

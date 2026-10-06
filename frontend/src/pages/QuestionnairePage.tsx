@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Field, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
 import type { QuestionDefinition } from '../config/questionBank'
-import { generateQuestionnaire } from '../engines/questionnaireGenerator'
+import { generateQuestionnaire, visibleQuestions } from '../engines/questionnaireGenerator'
 import { createLabSession } from '../models/labSession'
 import { notifyRecordsChanged } from '../context/records'
 import { useAuth } from '../context/auth'
@@ -65,7 +65,6 @@ const questionnairePages = [
       'q19-fatigue-frequency',
       'q20-cravings-hunger',
       'q21-physical-activity',
-      'q22-food-notes',
       'q23-activity-notes',
     ],
   },
@@ -73,13 +72,13 @@ const questionnairePages = [
     id: 'daily',
     title: 'Daily context',
     description: 'Sleep, stress, mood, and symptom notes that can be joined with daily logs.',
-    questionIds: ['q24-sleep-hours', 'q25-sleep-quality', 'q26-stress-level', 'q27-mood', 'q28-other-symptoms'],
+    questionIds: ['q24-sleep-hours', 'q27-mood', 'q28-other-symptoms'],
   },
   {
     id: 'adherence',
     title: 'Medication and adherence context',
     description: 'Reminder-related tracking only; medication details stay out of AI payloads.',
-    questionIds: ['q29-medication-scheduled', 'q30-medication-note'],
+    questionIds: ['q29-medication-scheduled'],
   },
 ] as const
 
@@ -130,7 +129,7 @@ export function QuestionnairePage() {
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [completedSessionId, setCompletedSessionId] = useState<string | null>(null)
 
-  const questions = useMemo(() => {
+  const generatedQuestions = useMemo(() => {
     if (!draft) return []
 
     const flags = Object.values(draft.validation.validatedBiomarkers)
@@ -147,6 +146,8 @@ export function QuestionnairePage() {
       hasMedicationRecords,
     })
   }, [draft, hasMedicationRecords, includeDailyContext])
+
+  const questions = visibleQuestions(generatedQuestions, responses)
 
   const questionGroups = useMemo(() => groupedQuestions(questions), [questions])
   const pageGroups = useMemo(() => questionsByPage(questions), [questions])
@@ -321,7 +322,9 @@ export function QuestionnairePage() {
           <div>
             <dt className="font-medium text-slate-900">Cycle regularity</dt>
             <dd className="text-slate-600">
-              {activeDraft.input.cycleRegularity ?? 'Not provided'}
+              {typeof responses['q4-cycle-regularity-3-months'] === 'string'
+                ? responses['q4-cycle-regularity-3-months']
+                : 'Answer the cycle timing question'}
             </dd>
           </div>
           <div>

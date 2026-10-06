@@ -5,7 +5,7 @@ import { InsightReport } from '../components/InsightReport'
 import { SymptomSeverityBadge } from '../components/SymptomSeverityBadge'
 import { Panel, PrimaryButton, StatusBadge } from '../components/ui'
 import { questionBank } from '../config/questionBank'
-import { referenceRanges } from '../config/referenceRanges'
+import { assayDependentBiomarkers, referenceRanges } from '../config/referenceRanges'
 import { buildSessionSymptomHistory } from '../engines/symptomHistoryEngine'
 import { InsufficientDataError, scoreSession } from '../engines/scoringEngine'
 import { notifyRecordsChanged } from '../context/records'
@@ -93,7 +93,7 @@ export function SessionDetailPage() {
   }
 
   const biomarkerEntries = Object.entries(session.biomarkers).filter(
-    (entry): entry is [BiomarkerKey, BiomarkerEntry] => Boolean(entry[1]),
+    (entry): entry is [BiomarkerKey, BiomarkerEntry] => Boolean(entry[1]) && !['amh', 'lhFshRatio', 'dheas'].includes(entry[0]),
   )
   const sessionSymptomRows = buildSessionSymptomHistory([session], symptoms)[0]?.rows ?? []
 
@@ -241,8 +241,12 @@ export function SessionDetailPage() {
                     {entry.value} {entry.unit}
                   </p>
                 </div>
-                <StatusBadge tone={entry.isFlagged ? 'warning' : 'success'}>
-                  {rangeLabel(entry.direction)}
+                <StatusBadge tone={assayDependentBiomarkers.has(key)
+                  ? 'neutral'
+                  : entry.isFlagged ? 'warning' : 'success'}>
+                  {assayDependentBiomarkers.has(key)
+                    ? 'clinician review'
+                    : rangeLabel(entry.direction)}
                 </StatusBadge>
               </div>
             </div>

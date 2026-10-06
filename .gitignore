@@ -17,6 +17,7 @@ dist-ssr
 backend/data/*.json
 test-results
 playwright-report
+.playwright-cli/
 *.traineddata
 
 # Editor directories and files

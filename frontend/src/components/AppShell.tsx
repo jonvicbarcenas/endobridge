@@ -27,7 +27,7 @@ const navItems = [
     to: '/lab',
     label: 'Lab Results',
     icon: FlaskConical,
-    description: 'Fixed PCOS biomarker panel',
+    description: 'Lipid, glucose, and other lab results',
   },
   {
     to: '/daily',
@@ -62,7 +62,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   },
   '/lab': {
     title: 'Lab Result Entry',
-    description: 'Enter fixed biomarker values, attach optional lab result files, and continue to context questions.',
+    description: 'Record lab results, attach optional files, and continue to cycle and symptom questions.',
   },
   '/daily': {
     title: 'Daily Wellness Log',
@@ -70,7 +70,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   },
   '/questionnaire': {
     title: 'Contextual Questionnaire',
-    description: 'Answer deterministic follow-up questions generated from flagged biomarker values.',
+    description: 'Record cycle timing and relevant symptoms with questions based on the submitted results.',
   },
   '/symptoms': {
     title: 'Symptoms & Tracking',

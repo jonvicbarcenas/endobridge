@@ -82,7 +82,7 @@ export function DashboardPage() {
         <Panel eyebrow="SRS/SDD modules" title="Continue monitoring">
           <div className="grid gap-3 md:grid-cols-2">
             <ActionCard
-              description="Manually enter LDL-C, fasting glucose, fasting insulin, testosterone, AMH, LH/FSH ratio, and DHEAS."
+              description="Enter the fixed ten-value lab panel alongside your cycle and symptom history."
               href="/lab"
               icon={<FlaskConical size={20} />}
               title="Start lab session"

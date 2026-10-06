@@ -1,4 +1,4 @@
-import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges.js'
+import { allBiomarkers, referenceRanges } from '../config/referenceRanges.js'
 import { buildSymptomTrendSummary } from './symptomTrendEngine.js'
 import type { BiomarkerTrendSummary, LongitudinalSummary, TrendLabel } from '../types/insight'
 import type { BiomarkerEntry, BiomarkerKey, LabSession, SymptomEntry } from '../types/session'
@@ -44,7 +44,7 @@ function buildBiomarkerTrends(
   currentSession: LabSession,
   previousSession: LabSession | null,
 ): BiomarkerTrendSummary[] {
-  return mandatoryBiomarkers.map((key: BiomarkerKey) => {
+  return allBiomarkers.filter((key) => currentSession.biomarkers[key] || previousSession?.biomarkers[key]).map((key: BiomarkerKey) => {
     const currentEntry = currentSession.biomarkers[key] ?? null
     const previousEntry = previousSession?.biomarkers[key] ?? null
 

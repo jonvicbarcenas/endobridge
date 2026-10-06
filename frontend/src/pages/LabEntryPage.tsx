@@ -3,7 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Field, Panel, PrimaryButton, StatusBadge, fieldControlClass } from '../components/ui'
-import { mandatoryBiomarkers, referenceRanges } from '../config/referenceRanges'
+import { allBiomarkers, assayDependentBiomarkers, referenceRanges, requiredNewBiomarkers } from '../config/referenceRanges'
 import { calculateBmi } from '../engines/measurementEngine'
 import { validateLabSessionInput } from '../engines/validationEngine'
 import { notifyRecordsChanged } from '../context/records'
@@ -12,14 +12,19 @@ import { useSessionDraft } from '../context/sessionDraft'
 import type { ExtractedBiomarkerValue, LabDocumentRecord } from '../types/monitoring'
 import type { BiomarkerInputMap, BiomarkerKey, LabSessionInput } from '../types/session'
 
-const initialBiomarkers: Record<BiomarkerKey, string> = {
-  ldlC: '',
-  fastingGlucose: '',
-  fastingInsulin: '',
+type ActiveBiomarkerKey = (typeof allBiomarkers)[number]
+
+const initialBiomarkers: Record<ActiveBiomarkerKey, string> = {
   totalTestosterone: '',
-  amh: '',
-  lhFshRatio: '',
-  dheas: '',
+  triglycerides: '',
+  fastingGlucose: '',
+  totalCholesterol: '',
+  hdlC: '',
+  ldlC: '',
+  tsh: '',
+  freeT3: '',
+  freeT4: '',
+  hba1c: '',
 }
 
 function buildInput({
@@ -27,22 +32,20 @@ function buildInput({
   heightCm,
   labDocumentIds,
   weightKg,
-  cycleRegularity,
   biomarkerValues,
 }: {
   age: string
   heightCm: string
   labDocumentIds: string[]
   weightKg: string
-  cycleRegularity: string
-  biomarkerValues: Record<BiomarkerKey, string>
+  biomarkerValues: Record<ActiveBiomarkerKey, string>
 }): LabSessionInput {
   const calculatedBmi = calculateBmi({
     weightKg: Number(weightKg),
     heightCm: Number(heightCm),
   })
   const biomarkers = Object.fromEntries(
-    mandatoryBiomarkers
+    allBiomarkers
       .filter((key) => biomarkerValues[key].trim())
       .map((key) => [
         key,
@@ -59,7 +62,7 @@ function buildInput({
     weightKg: weightKg.trim() ? Number(weightKg) : undefined,
     heightCm: heightCm.trim() ? Number(heightCm) : undefined,
     labDocumentIds,
-    cycleRegularity: cycleRegularity || undefined,
+    panelVersion: 'fixed-ten',
     biomarkers,
   }
 }
@@ -72,7 +75,10 @@ function rangeLabel(direction?: string) {
 }
 
 function friendlyValidationMessage(message: string) {
-  const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+  if (message.startsWith('weightKg')) return 'Weight is required for BMI.'
+  if (message.startsWith('heightCm')) return 'Height is required for BMI.'
+  if (message.startsWith('bmi')) return 'BMI could not be calculated from these measurements.'
+  const biomarkerKey = allBiomarkers.find((key) => message.startsWith(key))
   const friendly = biomarkerKey
     ? `${referenceRanges[biomarkerKey].label}${message.slice(biomarkerKey.length)}`
     : `${message.charAt(0).toUpperCase()}${message.slice(1)}`
@@ -82,8 +88,10 @@ function friendlyValidationMessage(message: string) {
 
 function validationErrorTargetId(message: string) {
   if (message.startsWith('age')) return 'age'
+  if (message.startsWith('weightKg') || message.startsWith('bmi')) return 'weight-kg'
+  if (message.startsWith('heightCm')) return 'height-cm'
 
-  const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+  const biomarkerKey = allBiomarkers.find((key) => message.startsWith(key))
   return biomarkerKey ? `biomarker-${biomarkerKey}` : undefined
 }
 
@@ -109,13 +117,14 @@ export function LabEntryPage() {
   const [age, setAge] = useState('')
   const [weightKg, setWeightKg] = useState('')
   const [heightCm, setHeightCm] = useState('')
-  const [cycleRegularity, setCycleRegularity] = useState('')
   const [biomarkerValues, setBiomarkerValues] = useState(initialBiomarkers)
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [documents, setDocuments] = useState<LabDocumentRecord[]>([])
   const [sessionDocumentIds, setSessionDocumentIds] = useState<string[]>([])
   const [uploadMessage, setUploadMessage] = useState('')
   const ageInputRef = useRef<HTMLInputElement>(null)
+  const weightInputRef = useRef<HTMLInputElement>(null)
+  const heightInputRef = useRef<HTMLInputElement>(null)
   const biomarkerInputRefs = useRef<Partial<Record<BiomarkerKey, HTMLInputElement | null>>>({})
   const [latestScan, setLatestScan] = useState<{
     fileName: string
@@ -128,7 +137,6 @@ export function LabEntryPage() {
     weightKg,
     heightCm,
     labDocumentIds: sessionDocumentIds,
-    cycleRegularity,
     biomarkerValues,
   })
   const validation = validateLabSessionInput(input)
@@ -150,8 +158,16 @@ export function LabEntryPage() {
       ageInputRef.current?.focus()
       return
     }
+    if (message.startsWith('weightKg') || message.startsWith('bmi')) {
+      weightInputRef.current?.focus()
+      return
+    }
+    if (message.startsWith('heightCm')) {
+      heightInputRef.current?.focus()
+      return
+    }
 
-    const biomarkerKey = mandatoryBiomarkers.find((key) => message.startsWith(key))
+    const biomarkerKey = allBiomarkers.find((key) => message.startsWith(key))
     if (biomarkerKey) biomarkerInputRefs.current[biomarkerKey]?.focus()
   }
 
@@ -227,16 +243,23 @@ export function LabEntryPage() {
 
   function applyExtractedBiomarkers() {
     if (!latestScan) return
+    const compatibleEntries = Object.entries(latestScan.extractedBiomarkers).filter(([key, entry]) =>
+      entry && allBiomarkers.includes(key as ActiveBiomarkerKey) &&
+      entry.unit.trim().toLowerCase() === referenceRanges[key as ActiveBiomarkerKey].unit.toLowerCase(),
+    )
+    const skipped = Object.keys(latestScan.extractedBiomarkers).length - compatibleEntries.length
     setBiomarkerValues((current) => {
       const next = { ...current }
-      Object.entries(latestScan.extractedBiomarkers).forEach(([key, entry]) => {
+      compatibleEntries.forEach(([key, entry]) => {
         if (entry) {
-          next[key as BiomarkerKey] = String(entry.value)
+          next[key as ActiveBiomarkerKey] = String(entry.value)
         }
       })
       return next
     })
-    setUploadMessage('Extracted biomarker values were copied into the form for review.')
+    setUploadMessage(skipped
+      ? 'Matching-unit values were copied. Review other results with your lab or clinician before entering them.'
+      : 'Extracted biomarker values were copied into the form for review.')
   }
 
 
@@ -251,9 +274,8 @@ export function LabEntryPage() {
         <div className="flex items-start gap-3">
           <FlaskConical className="mt-1 text-emerald-700" size={22} />
           <div>
-            <p className="text-sm leading-6 text-slate-600">
-              Enter the fixed EndoBridge biomarker panel from a lab result. Plausibility errors
-              block progression; clinical range flags are kept as monitoring context.
+          <p className="text-sm leading-6 text-slate-600">
+              Enter the ten lab results in your study panel. Clinical range flags are for review with your care team.
             </p>
           </div>
         </div>
@@ -290,23 +312,35 @@ export function LabEntryPage() {
               value={age}
             />
           </Field>
-          <Field label="Weight (kg)">
+          <Field error={submitAttempted && validation.errors.some((item) => item.startsWith('weightKg')) ? 'Weight is required for BMI.' : undefined} errorId="weight-kg-error" label="Weight (kg)" required>
             <input
               aria-label="Weight in kilograms"
+              aria-required="true"
+              aria-invalid={submitAttempted && validation.errors.some((item) => item.startsWith('weightKg'))}
+              aria-describedby={submitAttempted && validation.errors.some((item) => item.startsWith('weightKg')) ? 'weight-kg-error' : undefined}
               className={fieldControlClass}
+              id="weight-kg"
               min={20}
               onChange={(event) => setWeightKg(event.target.value)}
+              ref={weightInputRef}
+              required
               step="0.1"
               type="number"
               value={weightKg}
             />
           </Field>
-          <Field label="Height (cm)">
+          <Field error={submitAttempted && validation.errors.some((item) => item.startsWith('heightCm')) ? 'Height is required for BMI.' : undefined} errorId="height-cm-error" label="Height (cm)" required>
             <input
               aria-label="Height in centimeters"
+              aria-required="true"
+              aria-invalid={submitAttempted && validation.errors.some((item) => item.startsWith('heightCm'))}
+              aria-describedby={submitAttempted && validation.errors.some((item) => item.startsWith('heightCm')) ? 'height-cm-error' : undefined}
               className={fieldControlClass}
+              id="height-cm"
               min={100}
               onChange={(event) => setHeightCm(event.target.value)}
+              ref={heightInputRef}
+              required
               step="0.1"
               type="number"
               value={heightCm}
@@ -323,31 +357,20 @@ export function LabEntryPage() {
           </Field>
         </div>
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-1">
-          <Field label="Cycle regularity">
-            <select
-              aria-label="Cycle regularity"
-              className={fieldControlClass}
-              onChange={(event) => setCycleRegularity(event.target.value)}
-              value={cycleRegularity}
-            >
-              <option value="">Select cycle regularity</option>
-              <option value="regular">Regular</option>
-              <option value="irregular">Irregular</option>
-              <option value="missed">Missed</option>
-              <option value="unknown">Unknown</option>
-            </select>
-          </Field>
-        </div>
+        <p className="mt-2 text-xs text-slate-600">
+          For Asian adults, BMI 23 kg/m2 is a diabetes screening threshold when other risk factors are present; BMI alone does not diagnose PCOS.
+        </p>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2">
-          {mandatoryBiomarkers.map((key) => {
+          {allBiomarkers.map((key) => {
             const range = referenceRanges[key]
             const entry = validation.validatedBiomarkers[key]
             const plausibilityError = validation.errors.includes(`${key} is outside plausibility bounds`)
             const error = fieldError(key) ?? (plausibilityError ? `${range.label} needs review.` : undefined)
             const isFlagged = Boolean(entry?.isFlagged)
             const hasValue = biomarkerValues[key].trim().length > 0
+            const needsClinicalReview = assayDependentBiomarkers.has(key)
+            const isRequired = requiredNewBiomarkers.includes(key)
 
             return (
               <Field
@@ -355,14 +378,14 @@ export function LabEntryPage() {
                 errorId={`biomarker-${key}-error`}
                 key={key}
                 label={`${range.label} (${range.unit})`}
-                required
+                required={isRequired}
               >
                 <div className="flex gap-2">
                   <input
                     aria-describedby={error ? `biomarker-${key}-error` : undefined}
                     aria-invalid={Boolean(error)}
                     aria-label={range.label}
-                    aria-required="true"
+                    aria-required={isRequired}
                     className={fieldControlClass}
                     id={`biomarker-${key}`}
                     onChange={(event) =>
@@ -374,13 +397,14 @@ export function LabEntryPage() {
                     ref={(element) => {
                       biomarkerInputRefs.current[key] = element
                     }}
-                    required
+                    required={isRequired}
+                    step="any"
                     type="number"
                     value={biomarkerValues[key]}
                   />
                   {hasValue ? (
-                    <StatusBadge tone={error ? 'danger' : isFlagged ? 'warning' : 'success'}>
-                      {rangeLabel(entry?.direction)}
+                    <StatusBadge tone={error ? 'danger' : needsClinicalReview ? 'neutral' : isFlagged ? 'warning' : 'success'}>
+                      {needsClinicalReview ? 'clinician review' : rangeLabel(entry?.direction)}
                     </StatusBadge>
                   ) : null}
                 </div>
@@ -388,6 +412,9 @@ export function LabEntryPage() {
             )
           })}
         </div>
+        <p className="mt-3 text-xs text-slate-600">
+          Hormone and thyroid results are recorded for clinician review, not automatically classified. Units must match the lab report.
+        </p>
 
         <div className="mt-5 flex justify-end border-t border-slate-200 pt-4">
           <PrimaryButton type="submit">

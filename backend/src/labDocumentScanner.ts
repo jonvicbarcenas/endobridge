@@ -45,13 +45,16 @@ const biomarkerPatterns: Array<{
   key: BiomarkerKey
   labels: string[]
 }> = [
+  { key: 'totalCholesterol', labels: ['total cholesterol', 'cholesterol total'] },
+  { key: 'hdlC', labels: ['HDL-C', 'HDL C', 'HDL cholesterol', 'HDL'] },
   { key: 'ldlC', labels: ['LDL-C', 'LDL C', 'LDL cholesterol', 'LDL'] },
+  { key: 'triglycerides', labels: ['triglycerides', 'triglyceride'] },
   { key: 'fastingGlucose', labels: ['fasting glucose', 'glucose fasting', 'FBS', 'fasting blood glucose'] },
-  { key: 'fastingInsulin', labels: ['fasting insulin', 'insulin fasting', 'insulin'] },
+  { key: 'hba1c', labels: ['HbA1c', 'A1c', 'glycated hemoglobin', 'HbAlc', 'Al1C'] },
+  { key: 'tsh', labels: ['TSH', 'thyroid stimulating hormone'] },
+  { key: 'freeT3', labels: ['free T3', 'FT3'] },
+  { key: 'freeT4', labels: ['free T4', 'FT4'] },
   { key: 'totalTestosterone', labels: ['total testosterone', 'testosterone total', 'testosterone'] },
-  { key: 'amh', labels: ['AMH', 'anti mullerian hormone', 'anti-mullerian hormone'] },
-  { key: 'lhFshRatio', labels: ['LH/FSH ratio', 'LH FSH ratio', 'LH:FSH ratio'] },
-  { key: 'dheas', labels: ['DHEAS', 'DHEA-S', 'DHEA sulfate', 'DHEA sulphate'] },
 ]
 const MAX_DOCUMENT_BYTES = 6_000_000
 const MAX_DOCX_XML_BYTES = 2_000_000
@@ -328,12 +331,12 @@ export function buildGeminiVisionRequest(mimeType: string, base64Buffer: string)
         {
           text:
             'You are an expert clinical laboratory document extraction engine for EndoBridge. ' +
-            'Your job is to visually inspect the provided lab document image or PDF and extract the patient\'s ACTUAL lab test values for any of the 7 supported biomarkers.\n' +
+            'Your job is to visually inspect the provided lab document image or PDF and extract the patient\'s ACTUAL lab test values for supported biomarkers.\n' +
             'CRITICAL EXTRACTION RULES:\n' +
             '1. Extract ONLY the patient\'s actual test result value. NEVER extract reference intervals, normal ranges, biological reference ranges, flagged indicators, or high/low limits as patient values.\n' +
             '2. Extract numeric values only. If a result says "< 0.1" or "> 100", extract the numeric portion.\n' +
             '3. Read the exact unit printed for that test (e.g. mg/dL, ng/mL, uIU/mL, pmol/L, etc.).\n' +
-            '4. Provide the exact test label / test name found on the report (e.g. "Glucose, Fasting", "LDL-Cholesterol Calculated", "AMH ECLIA").\n' +
+            '4. Provide the exact test label / test name found on the report (e.g. "Glucose, Fasting", "LDL-Cholesterol Calculated", "TSH").\n' +
             '5. Do NOT guess or hallucinate. If a biomarker is not in the document, do NOT include it in the biomarkers list.\n' +
             '6. Provide a concise document summary (up to 300 characters) indicating document source or header info.\n' +
             'Return JSON only.',
@@ -352,14 +355,11 @@ export function buildGeminiVisionRequest(mimeType: string, base64Buffer: string)
           },
           {
             text:
-              'Analyze this medical laboratory document and extract any of the following 7 biomarker values present: ' +
-              'ldlC (LDL-C / LDL Cholesterol), ' +
+              'Analyze this medical laboratory document and extract any of these biomarker values present: ' +
+              'totalCholesterol (Total Cholesterol), hdlC (HDL Cholesterol), ldlC (LDL Cholesterol), triglycerides (Triglycerides), ' +
+              'hba1c (HbA1c), tsh (TSH), freeT3 (Free T3), freeT4 (Free T4), ' +
               'fastingGlucose (Fasting Blood Sugar / Glucose Fasting / FBS), ' +
-              'fastingInsulin (Fasting Insulin / Insulin Fasting), ' +
-              'totalTestosterone (Total Testosterone), ' +
-              'amh (Anti-Müllerian Hormone / AMH), ' +
-              'lhFshRatio (LH/FSH ratio or LH to FSH ratio), ' +
-              'dheas (DHEA-S / DHEA Sulfate / DHEAS).',
+              'totalTestosterone (Total Testosterone).',
           },
         ],
       },
@@ -380,13 +380,16 @@ export function buildGeminiVisionRequest(mimeType: string, base64Buffer: string)
                 key: {
                   type: 'string',
                   enum: [
+                    'totalCholesterol',
+                    'hdlC',
                     'ldlC',
+                    'triglycerides',
                     'fastingGlucose',
-                    'fastingInsulin',
+                    'hba1c',
+                    'tsh',
+                    'freeT3',
+                    'freeT4',
                     'totalTestosterone',
-                    'amh',
-                    'lhFshRatio',
-                    'dheas',
                   ],
                 },
                 value: { type: 'number' },
@@ -444,13 +447,16 @@ export function parseGeminiVisionResponse(rawJson: string): GeminiVisionExtracti
   const documentSummary = typeof parsed.documentSummary === 'string' ? parsed.documentSummary.trim() : ''
   const extracted: Partial<Record<BiomarkerKey, ExtractedBiomarkerValue>> = {}
   const validKeys = new Set([
+    'totalCholesterol',
+    'hdlC',
     'ldlC',
+    'triglycerides',
     'fastingGlucose',
-    'fastingInsulin',
+    'hba1c',
+    'tsh',
+    'freeT3',
+    'freeT4',
     'totalTestosterone',
-    'amh',
-    'lhFshRatio',
-    'dheas',
   ])
 
   for (const item of parsed.biomarkers) {

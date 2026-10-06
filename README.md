@@ -29,7 +29,8 @@ Implemented capstone scope:
 
 - Account registration/login
 - Backend-saved Terms of Use, privacy consent, age confirmation, and non-diagnostic disclaimer
-- Lab result entry UI for the seven mandatory biomarkers
+- Fixed ten-value lab entry: total testosterone, triglycerides, fasting glucose, total cholesterol, HDL-C, LDL-C, TSH, free T3, free T4, and HbA1c
+- Asian BMI diabetes-screening context and clinician review for assay-dependent hormone and thyroid results
 - Client-side plausibility and clinical-range validation
 - Contextual questionnaire generation from biomarker flags
 - Deterministic biomarker flagging and contributor ranking
@@ -40,6 +41,8 @@ Implemented capstone scope:
 - Serverless Gemini proxy with request validation, rate limiting, model call, and unsafe-output rejection
 - Figma-aligned dashboard shell/sidebar styling
 - Unit tests for validation, scoring, questionnaire generation, backend storage, and safe proxy payload shape
+
+Clinical thresholds and guideline links are documented in [CLINICAL_SOURCES.md](CLINICAL_SOURCES.md).
 
 Remaining production hardening:
 

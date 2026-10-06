@@ -1,8 +1,16 @@
 import type { InsightReport } from './insight'
 
 export type BiomarkerKey =
+  | 'totalCholesterol'
   | 'ldlC'
+  | 'hdlC'
+  | 'triglycerides'
   | 'fastingGlucose'
+  | 'ogttTwoHourGlucose'
+  | 'hba1c'
+  | 'tsh'
+  | 'freeT3'
+  | 'freeT4'
   | 'fastingInsulin'
   | 'totalTestosterone'
   | 'amh'
@@ -14,6 +22,8 @@ export type Direction = 'low' | 'high' | 'normal'
 export interface BiomarkerInput {
   value: number
   unit: string
+  referenceMin?: number
+  referenceMax?: number
 }
 
 export type BiomarkerInputMap = Partial<Record<BiomarkerKey, BiomarkerInput>>
@@ -25,6 +35,8 @@ export interface LabSessionInput {
   heightCm?: number
   labDocumentIds?: string[]
   cycleRegularity?: string
+  glucoseTest?: 'fasting' | 'ogtt' | 'hba1c'
+  panelVersion?: 'fixed-ten'
   biomarkers: BiomarkerInputMap
 }
 
@@ -51,6 +63,8 @@ export interface SupplementaryData {
   heightCm?: number
   labDocumentIds?: string[]
   cycleRegularity?: string
+  glucoseTest?: 'fasting' | 'ogtt' | 'hba1c'
+  panelVersion?: 'fixed-ten'
 }
 
 export interface QuestionnaireResponse {

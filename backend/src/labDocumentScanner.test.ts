@@ -18,30 +18,54 @@ function validPngDataUrl() {
 describe('scanLabDocument', () => {
   it('extracts supported biomarkers from plain document uploads', async () => {
     const result = await scanLabDocument(
-      textDataUrl('Patient lab result\nLDL cholesterol: 180 mg/dL\nAMH: 9.2 ng/mL'),
+      textDataUrl('Patient lab result\nTotal cholesterol: 180 mg/dL\nTotal testosterone: 55 ng/dL\nLDL cholesterol: 150 mg/dL\nAMH: 9.2 ng/mL\nFasting insulin: 12 uIU/mL\n2-hour OGTT: 125 mg/dL'),
     )
 
     expect(result.extractionStatus).toBe('scanned')
-    expect(result.extractedBiomarkers.ldlC).toEqual(
-      expect.objectContaining({ key: 'ldlC', value: 180, unit: 'mg/dL' }),
+    expect(result.extractedBiomarkers.totalCholesterol).toEqual(
+      expect.objectContaining({ key: 'totalCholesterol', value: 180, unit: 'mg/dL' }),
     )
-    expect(result.extractedBiomarkers.amh).toEqual(
-      expect.objectContaining({ key: 'amh', value: 9.2, unit: 'ng/mL' }),
+    expect(result.extractedBiomarkers.totalTestosterone).toEqual(
+      expect.objectContaining({ key: 'totalTestosterone', value: 55, unit: 'ng/dL' }),
     )
+    expect(result.extractedBiomarkers.amh).toBeUndefined()
+    expect(result.extractedBiomarkers.ldlC?.value).toBe(150)
+    expect(result.extractedBiomarkers.fastingInsulin).toBeUndefined()
+    expect(result.extractedBiomarkers.ogttTwoHourGlucose).toBeUndefined()
     expect(result.scanMessage).toContain('document')
+  })
+
+  it('extracts lipid, glycemic, and thyroid values from a lab report', async () => {
+    const result = await scanLabDocument(textDataUrl(
+      'Total cholesterol: 205 mg/dL\nHDL cholesterol: 42 mg/dL\nTriglycerides: 160 mg/dL\nHbA1c: 5.8 %\nTSH: 2.1 mIU/L',
+    ))
+    expect(result.extractedBiomarkers.totalCholesterol?.value).toBe(205)
+    expect(result.extractedBiomarkers.hdlC?.value).toBe(42)
+    expect(result.extractedBiomarkers.triglycerides?.value).toBe(160)
+    expect(result.extractedBiomarkers.hba1c?.value).toBe(5.8)
+    expect(result.extractedBiomarkers.tsh?.value).toBe(2.1)
+  })
+
+  it('recognizes common A1C OCR character swaps', async () => {
+    const letterSwap = await scanLabDocument(textDataUrl('HbAlc 6.5 %'))
+    expect(letterSwap.extractedBiomarkers.hba1c?.value).toBe(6.5)
+
+    const decimalSwap = await scanLabDocument(textDataUrl('Al1C 55 %'))
+    expect(decimalSwap.extractedBiomarkers.hba1c).toEqual(
+      expect.objectContaining({ value: 5.5, confidence: 'medium' }),
+    )
   })
 
   it('restores likely missing decimal points when OCR returns implausible biomarker values', async () => {
     const result = await scanLabDocument(
-      textDataUrl('AMH: 72 ng/mL\nLH/FSH ratio: 22 ratio'),
+      textDataUrl('Free T4: 18 ng/dL\nAMH: 72 ng/mL\nLH/FSH ratio: 22 ratio'),
     )
 
-    expect(result.extractedBiomarkers.amh).toEqual(
-      expect.objectContaining({ key: 'amh', value: 7.2, confidence: 'medium' }),
+    expect(result.extractedBiomarkers.freeT4).toEqual(
+      expect.objectContaining({ key: 'freeT4', value: 1.8, confidence: 'medium' }),
     )
-    expect(result.extractedBiomarkers.lhFshRatio).toEqual(
-      expect.objectContaining({ key: 'lhFshRatio', value: 2.2, confidence: 'medium' }),
-    )
+    expect(result.extractedBiomarkers.amh).toBeUndefined()
+    expect(result.extractedBiomarkers.lhFshRatio).toBeUndefined()
   })
 
   it('rejects MIME spoofing and oversized decoded documents', async () => {
@@ -77,8 +101,14 @@ describe('scanLabDocument', () => {
             sourceLabel: 'Glucose, Fasting',
           },
           {
+            key: 'freeT4',
+            value: 18, // Should be normalized to 1.8
+            unit: 'ng/dL',
+            sourceLabel: 'Free T4',
+          },
+          {
             key: 'amh',
-            value: 72, // Should be normalized to 7.2
+            value: 7.2,
             unit: 'ng/mL',
             sourceLabel: 'Anti-Mullerian Hormone',
           },
@@ -95,14 +125,15 @@ describe('scanLabDocument', () => {
           confidence: 'high',
         }),
       )
-      expect(parsed.biomarkers.amh).toEqual(
+      expect(parsed.biomarkers.freeT4).toEqual(
         expect.objectContaining({
-          key: 'amh',
-          value: 7.2,
+          key: 'freeT4',
+          value: 1.8,
           confidence: 'medium',
-          sourceLabel: 'Anti-Mullerian Hormone (decimal reviewed)',
+          sourceLabel: 'Free T4 (decimal reviewed)',
         }),
       )
+      expect(parsed.biomarkers.amh).toBeUndefined()
     })
 
     it('extracts candidate text ignoring thought parts and fenced markdown', () => {
@@ -143,10 +174,10 @@ describe('scanLabDocument', () => {
                         sourceLabel: 'Fasting Blood Sugar',
                       },
                       {
-                        key: 'ldlC',
-                        value: 110,
+                        key: 'totalCholesterol',
+                        value: 190,
                         unit: 'mg/dL',
-                        sourceLabel: 'LDL Calculated',
+                        sourceLabel: 'Total Cholesterol',
                       },
                     ],
                   }),
@@ -179,10 +210,10 @@ describe('scanLabDocument', () => {
           unit: 'mg/dL',
         }),
       )
-      expect(result.extractedBiomarkers.ldlC).toEqual(
+      expect(result.extractedBiomarkers.totalCholesterol).toEqual(
         expect.objectContaining({
-          key: 'ldlC',
-          value: 110,
+          key: 'totalCholesterol',
+          value: 190,
           unit: 'mg/dL',
         }),
       )
@@ -204,10 +235,10 @@ describe('scanLabDocument', () => {
                     documentSummary: 'Scanned Quest Diagnostics PDF',
                     biomarkers: [
                       {
-                        key: 'amh',
-                        value: 4.5,
-                        unit: 'ng/mL',
-                        sourceLabel: 'Anti-Mullerian Hormone',
+                        key: 'tsh',
+                        value: 2.5,
+                        unit: 'mIU/L',
+                        sourceLabel: 'TSH',
                       },
                     ],
                   }),
@@ -233,11 +264,11 @@ describe('scanLabDocument', () => {
       expect(result.scanMessage).toContain('Scanned PDF with AI Vision')
       expect(result.scanMessage).toContain('1 biomarker value')
       expect(result.extractedTextPreview).toContain('Scanned Quest Diagnostics PDF')
-      expect(result.extractedBiomarkers.amh).toEqual(
+      expect(result.extractedBiomarkers.tsh).toEqual(
         expect.objectContaining({
-          key: 'amh',
-          value: 4.5,
-          unit: 'ng/mL',
+          key: 'tsh',
+          value: 2.5,
+          unit: 'mIU/L',
         }),
       )
     })

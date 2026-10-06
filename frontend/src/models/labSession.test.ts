@@ -29,4 +29,12 @@ describe('createLabSession', () => {
     expect(session.status).toBe('complete')
     expect(session.questionnaire).toEqual({ 'cycle-pattern': 'irregular' })
   })
+
+  it('derives cycle regularity from the specific timing answer', () => {
+    const validation = validateLabSessionInput(validInput)
+    const session = createLabSession(validInput, validation, {
+      'q4-cycle-regularity-3-months': 'Yes',
+    })
+    expect(session.supplementary.cycleRegularity).toBe('regular')
+  })
 })

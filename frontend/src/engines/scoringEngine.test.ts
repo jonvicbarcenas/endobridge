@@ -12,10 +12,10 @@ const input: LabSessionInput = {
   biomarkers: {
     ldlC: { value: 180, unit: 'mg/dL' },
     fastingGlucose: { value: 130, unit: 'mg/dL' },
-    fastingInsulin: { value: 22, unit: 'uIU/mL' },
-    totalTestosterone: { value: 75, unit: 'ng/dL' },
-    amh: { value: 9.1, unit: 'ng/mL' },
-    lhFshRatio: { value: 2.9, unit: 'ratio' },
+    fastingInsulin: { value: 22, unit: 'uIU/mL', referenceMin: 2, referenceMax: 20 },
+    totalTestosterone: { value: 75, unit: 'ng/dL', referenceMin: 15, referenceMax: 70 },
+    amh: { value: 9.1, unit: 'ng/mL', referenceMin: 1, referenceMax: 6.8 },
+    lhFshRatio: { value: 2.9, unit: 'ratio', referenceMin: 0.5, referenceMax: 2 },
     dheas: { value: 410, unit: 'ug/dL' },
   },
 }
@@ -40,7 +40,7 @@ describe('scoreSession', () => {
       ...input,
       biomarkers: {
         ...input.biomarkers,
-        ldlC: { value: 140, unit: 'mg/dL' },
+        fastingGlucose: { value: 110, unit: 'mg/dL' },
       },
     })
     const currentValidation = validateLabSessionInput(input)
@@ -78,9 +78,9 @@ describe('scoreSession', () => {
         priorSessionCount: 1,
         biomarkerTrends: expect.arrayContaining([
           expect.objectContaining({
-            key: 'ldlC',
-            previousValue: 140,
-            currentValue: 180,
+            key: 'fastingGlucose',
+            previousValue: 110,
+            currentValue: 130,
             trendLabel: 'increased',
           }),
         ]),
@@ -231,8 +231,21 @@ describe('scoreSession', () => {
   it('does not produce partial synthesis output when mandatory data is incomplete', () => {
     const validation = validateLabSessionInput(input)
     const session = createLabSession(input, validation)
-    delete session.biomarkers.dheas
+    delete session.biomarkers.totalTestosterone
 
     expect(() => scoreSession(session)).toThrow(InsufficientDataError)
+  })
+
+  it('excludes retired biomarkers from historical report contributors', () => {
+    const validation = validateLabSessionInput(input)
+    const session = createLabSession(input, validation)
+    session.biomarkers.amh = {
+      key: 'amh', value: 9.1, unit: 'ng/mL', isPlausible: true,
+      isFlagged: true, direction: 'high',
+    }
+
+    const synthesis = scoreSession(session)
+    expect(synthesis.flaggedBiomarkers.some((item) => item.key === 'amh')).toBe(false)
+    expect(synthesis.topContributors.some((item) => item.key === 'amh')).toBe(false)
   })
 })
