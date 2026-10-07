@@ -113,15 +113,15 @@ export function QuestionnairePage() {
   const navigate = useNavigate()
   const { api, token } = useAuth()
   const { draft, clearDraft } = useSessionDraft()
-  const [responses, setResponses] = useState<ResponseDraft>(() => {
+  const prefilledResponses = useMemo<ResponseDraft>(() => {
     if (!draft) return {} as ResponseDraft
-    const defaultResponses: ResponseDraft = {
-      'q1-age': String(draft.input.age),
+    return {
+      'q1-age': draft.input.age ? String(draft.input.age) : '',
       'q2-current-weight': draft.input.weightKg ? String(draft.input.weightKg) : '',
       'q3-height': draft.input.heightCm ? String(draft.input.heightCm) : '',
     }
-    return defaultResponses
-  })
+  }, [draft])
+  const [responses, setResponses] = useState<ResponseDraft>(() => ({ ...prefilledResponses }))
   const [includeDailyContext] = useState(true)
   const [hasMedicationRecords] = useState(true)
   const [activePageIndex, setActivePageIndex] = useState(0)
@@ -148,15 +148,16 @@ export function QuestionnairePage() {
   }, [draft, hasMedicationRecords, includeDailyContext])
 
   const questions = visibleQuestions(generatedQuestions, responses)
+  const questionsToAnswer = questions.filter((question) => !prefilledResponses[question.id])
 
-  const questionGroups = useMemo(() => groupedQuestions(questions), [questions])
-  const pageGroups = useMemo(() => questionsByPage(questions), [questions])
+  const questionGroups = useMemo(() => groupedQuestions(questionsToAnswer), [questionsToAnswer])
+  const pageGroups = useMemo(() => questionsByPage(questionsToAnswer), [questionsToAnswer])
   const visiblePageIndex = Math.min(activePageIndex, Math.max(pageGroups.length - 1, 0))
   const activePage = pageGroups[visiblePageIndex]
-  const answeredRequiredCount = questions.filter(
+  const answeredRequiredCount = questionsToAnswer.filter(
     (question) => question.required && !isMissingRequired(question, responses[question.id]),
   ).length
-  const requiredCount = questions.filter((question) => question.required).length
+  const requiredCount = questionsToAnswer.filter((question) => question.required).length
   const progressPercent = requiredCount > 0 ? Math.round((answeredRequiredCount / requiredCount) * 100) : 0
 
   if (!draft) {
@@ -320,6 +321,18 @@ export function QuestionnairePage() {
             <dd className="text-slate-600">{activeDraft.input.age}</dd>
           </div>
           <div>
+            <dt className="font-medium text-slate-900">Weight</dt>
+            <dd className="text-slate-600">
+              {activeDraft.input.weightKg ? `${activeDraft.input.weightKg} kg` : 'Not provided'}
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium text-slate-900">Height</dt>
+            <dd className="text-slate-600">
+              {activeDraft.input.heightCm ? `${activeDraft.input.heightCm} cm` : 'Not provided'}
+            </dd>
+          </div>
+          <div>
             <dt className="font-medium text-slate-900">Cycle regularity</dt>
             <dd className="text-slate-600">
               {typeof responses['q4-cycle-regularity-3-months'] === 'string'
@@ -338,7 +351,7 @@ export function QuestionnairePage() {
           <div>
             <dt className="font-medium text-slate-900">Question bank</dt>
             <dd className="text-slate-600">
-              {questions.length} fixed questions selected across {pageGroups.length} questionnaire pages.
+              {questionsToAnswer.length} fixed questions to answer across {pageGroups.length} questionnaire pages.
             </dd>
           </div>
           <div>
