@@ -1,4 +1,6 @@
+import { Info } from 'lucide-react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 export const fieldControlClass =
   'min-h-11 w-full rounded-[10px] border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-100'
@@ -17,7 +19,7 @@ export function Panel({
   className?: string
 }) {
   return (
-    <section className={`rounded-[14px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60 sm:p-6 ${className}`}>
+    <section className={`rounded-[14px] border border-slate-300/70 bg-white p-5 shadow-md shadow-slate-300/40 sm:p-6 ${className}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           {eyebrow ? (
@@ -25,7 +27,10 @@ export function Panel({
               {eyebrow}
             </p>
           ) : null}
-          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <span aria-hidden="true" className="h-4 w-1 rounded-full bg-indigo-500" />
+            {title}
+          </h2>
         </div>
         {action}
       </div>
@@ -39,12 +44,14 @@ export function Field({
   error,
   errorId,
   required = false,
+  hint,
   children,
 }: {
   label: string
   error?: string
   errorId?: string
   required?: boolean
+  hint?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -59,6 +66,7 @@ export function Field({
             <span className="sr-only"> required</span>
           </>
         ) : null}
+        {hint}
       </span>
       {children}
       {error ? (
@@ -159,7 +167,7 @@ export function StatCard({
   }[tone]
 
   return (
-    <article className="rounded-[14px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
+    <article className="rounded-[14px] border border-slate-300/70 bg-white p-5 shadow-md shadow-slate-300/40">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium text-slate-500">{label}</p>
         <div className={`flex size-9 items-center justify-center rounded-full ${toneClass}`}>
@@ -169,5 +177,85 @@ export function StatCard({
       <p className="mt-4 text-3xl font-semibold leading-9 text-slate-950">{value}</p>
       <p className="mt-1 text-sm text-slate-500">{detail}</p>
     </article>
+  )
+}
+
+/**
+ * Small "what does this mean?" button. Opens on tap or click (so it works on
+ * phones, where hover tooltips do not), closes on Escape or an outside tap.
+ */
+export function InfoTip({ term, children }: { term: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(null)
+  const wrapperRef = useRef<HTMLSpanElement>(null)
+  const panelId = useId()
+
+  function toggle(button: HTMLButtonElement) {
+    if (open) {
+      setOpen(false)
+      return
+    }
+    // Fixed positioning, clamped to the viewport, so the note never runs off a phone screen.
+    const rect = button.getBoundingClientRect()
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+    const width = Math.min(288, viewportWidth - 24)
+    const left = Math.max(12, Math.min(rect.left - 8, viewportWidth - width - 12))
+    setPosition({ top: rect.bottom + 6, left, width })
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    function closeOnScroll() {
+      setOpen(false)
+    }
+    function close(event: MouseEvent | TouchEvent) {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('touchstart', close)
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', closeOnScroll, { passive: true })
+    window.addEventListener('resize', closeOnScroll)
+    return () => {
+      window.removeEventListener('scroll', closeOnScroll)
+      window.removeEventListener('resize', closeOnScroll)
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('touchstart', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <span className="relative ml-1 inline-flex align-middle" ref={wrapperRef}>
+      <button
+        aria-controls={panelId}
+        aria-expanded={open}
+        aria-label={`What is ${term}?`}
+        className="inline-flex size-6 items-center justify-center rounded-full text-indigo-700 transition hover:bg-indigo-50 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          toggle(event.currentTarget)
+        }}
+        type="button"
+      >
+        <Info aria-hidden="true" size={15} />
+      </button>
+      {open && position ? (
+        <span
+          className="fixed z-50 block rounded-[12px] border border-slate-200 bg-white p-3 text-xs font-normal leading-5 text-slate-700 shadow-lg shadow-slate-300/50"
+          id={panelId}
+          role="note"
+          style={{ top: position.top, left: position.left, width: position.width }}
+        >
+          <span className="block font-semibold text-slate-950">{term}</span>
+          <span className="mt-1 block">{children}</span>
+        </span>
+      ) : null}
+    </span>
   )
 }

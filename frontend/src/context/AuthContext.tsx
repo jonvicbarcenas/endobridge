@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { BackendAPIService, type AuthResponse } from '../services/backendApiService'
+import { clearAllDrafts } from '../hooks/usePersistentState'
 import { AuthContext } from './auth'
 
 const AUTH_TOKEN_KEY = 'endobridge.sessionToken'
@@ -16,6 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthResponse['user'] | null>(null)
   const [termsAccepted, setTermsAccepted] = useState(false)
   const [isLoading, setIsLoading] = useState(Boolean(token))
+  const [recoveryCode, setRecoveryCode] = useState<string | null>(null)
 
   const persistSession = useCallback((response: AuthResponse) => {
     sessionStorage.setItem(AUTH_TOKEN_KEY, response.token)
@@ -26,6 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearSession = useCallback(() => {
     sessionStorage.removeItem(AUTH_TOKEN_KEY)
+    clearAllDrafts()
+    setRecoveryCode(null)
     setToken(null)
     setUser(null)
     setTermsAccepted(false)
@@ -69,9 +73,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [api, persistSession])
 
   const register = useCallback(async (email: string, password: string) => {
-    await api.register(email, password)
+    const registration = await api.register(email, password)
+    setRecoveryCode(registration.recoveryCode ?? null)
     persistSession(await api.login(email, password))
   }, [api, persistSession])
+
+  const dismissRecoveryCode = useCallback(() => setRecoveryCode(null), [])
+
+  const recoverPassword = useCallback(
+    async (email: string, code: string, newPassword: string) =>
+      (await api.recoverPassword(email, code, newPassword)).recoveryCode,
+    [api],
+  )
+
+  const regenerateRecoveryCode = useCallback(async () => {
+    if (!token) throw new Error('Log in to create a recovery code.')
+    return (await api.issueRecoveryCode(token)).recoveryCode
+  }, [api, token])
 
   const acceptTerms = useCallback(async () => {
     if (!token) return
@@ -90,8 +108,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       acceptTerms,
       logout,
+      recoveryCode,
+      dismissRecoveryCode,
+      recoverPassword,
+      regenerateRecoveryCode,
     }),
-    [acceptTerms, api, isLoading, login, logout, register, termsAccepted, token, user],
+    [
+      acceptTerms,
+      api,
+      dismissRecoveryCode,
+      isLoading,
+      login,
+      logout,
+      recoverPassword,
+      recoveryCode,
+      regenerateRecoveryCode,
+      register,
+      termsAccepted,
+      token,
+      user,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

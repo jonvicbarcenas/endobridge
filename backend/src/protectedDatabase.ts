@@ -45,6 +45,8 @@ interface ProtectedDatabase {
     termsAccepted: boolean
   }>
   authenticate(token: string): Promise<AuthenticatedUser>
+  issueRecoveryCode(userId: string): Promise<string>
+  resetPasswordWithRecoveryCode(email: string, recoveryCode: string, newPassword: string): Promise<string>
   revokeSession(token: string): Promise<void>
   consumeRateLimit(key: string, action: string, maxRequests: number, windowMs: number): Promise<boolean>
   sessionProfile(token: string): Promise<{ user: AuthenticatedUser; termsAccepted: boolean }>
@@ -147,6 +149,24 @@ async function verifyPassword(password: string, storedHash: string) {
   const expected = Buffer.from(hash, 'hex')
   const actual = (await scryptAsync(password, salt, 64)) as Buffer
   return expected.length === actual.length && timingSafeEqual(expected, actual)
+}
+
+const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+const DUMMY_RECOVERY_HASH = `missing-code:${'00'.repeat(64)}`
+
+/** 16 characters from an unambiguous alphabet, shown as XXXX-XXXX-XXXX-XXXX. */
+function newRecoveryCode() {
+  const bytes = randomBytes(16)
+  const chars = Array.from(bytes, (byte) => RECOVERY_ALPHABET[byte % RECOVERY_ALPHABET.length])
+  return [0, 4, 8, 12].map((start) => chars.slice(start, start + 4).join('')).join('-')
+}
+
+export function normalizeRecoveryCode(code: string) {
+  return code.toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+function validNewPassword(password: string) {
+  return password.length >= 8 && password.length <= 128
 }
 
 function tokenHash(token: string) {
@@ -262,6 +282,36 @@ class FileProtectedDatabase implements ProtectedDatabase {
       throw new Error('unauthorized')
     }
     return { userId: user.userId, email: user.email }
+  }
+
+  async issueRecoveryCode(userId: string) {
+    const user = this.state.users.find((entry) => entry.userId === userId)
+    if (!user) throw new Error('unauthorized')
+    const code = newRecoveryCode()
+    user.recoveryCodeHash = await hashPassword(normalizeRecoveryCode(code))
+    this.save()
+    return code
+  }
+
+  async resetPasswordWithRecoveryCode(email: string, recoveryCode: string, newPassword: string) {
+    const normalizedEmail = email.trim().toLowerCase()
+    const user = this.state.users.find((entry) => entry.email === normalizedEmail)
+    const codeMatches = await verifyPassword(
+      normalizeRecoveryCode(recoveryCode),
+      user?.recoveryCodeHash ?? DUMMY_RECOVERY_HASH,
+    )
+    if (!user || !codeMatches) throw new Error('invalid recovery details')
+    if (!validNewPassword(newPassword)) {
+      throw new Error('a valid email and an 8-128 character password are required')
+    }
+
+    const code = newRecoveryCode()
+    user.passwordHash = await hashPassword(newPassword)
+    user.recoveryCodeHash = await hashPassword(normalizeRecoveryCode(code))
+    // Sign out every device that used the old password.
+    this.state.sessions = this.state.sessions.filter((entry) => entry.userId !== user.userId)
+    this.save()
+    return code
   }
 
   async revokeSession(token: string) {
@@ -521,6 +571,43 @@ class MongoProtectedDatabase implements ProtectedDatabase {
       throw new Error('unauthorized')
     }
     return { userId: user.userId, email: user.email }
+  }
+
+  async issueRecoveryCode(userId: string) {
+    const code = newRecoveryCode()
+    const result = await this.users(await this.db()).updateOne(
+      { userId },
+      { $set: { recoveryCodeHash: await hashPassword(normalizeRecoveryCode(code)) } },
+    )
+    if (result.matchedCount === 0) throw new Error('unauthorized')
+    return code
+  }
+
+  async resetPasswordWithRecoveryCode(email: string, recoveryCode: string, newPassword: string) {
+    const db = await this.db()
+    const normalizedEmail = email.trim().toLowerCase()
+    const user = await this.users(db).findOne({ email: normalizedEmail })
+    const codeMatches = await verifyPassword(
+      normalizeRecoveryCode(recoveryCode),
+      user?.recoveryCodeHash ?? DUMMY_RECOVERY_HASH,
+    )
+    if (!user || !codeMatches) throw new Error('invalid recovery details')
+    if (!validNewPassword(newPassword)) {
+      throw new Error('a valid email and an 8-128 character password are required')
+    }
+
+    const code = newRecoveryCode()
+    await this.users(db).updateOne(
+      { userId: user.userId, recoveryCodeHash: user.recoveryCodeHash },
+      {
+        $set: {
+          passwordHash: await hashPassword(newPassword),
+          recoveryCodeHash: await hashPassword(normalizeRecoveryCode(code)),
+        },
+      },
+    )
+    await db.collection<SessionRecord>('sessions').deleteMany({ userId: user.userId })
+    return code
   }
 
   async revokeSession(token: string) {

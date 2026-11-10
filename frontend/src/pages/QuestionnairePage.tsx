@@ -2,7 +2,9 @@ import { Save } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useMemo, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Field, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
+import { Field, InfoTip, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
+import { findGeneralTerm } from '../config/glossary'
+import { removeDraft, usePersistentState } from '../hooks/usePersistentState'
 import type { QuestionDefinition } from '../config/questionBank'
 import { generateQuestionnaire, visibleQuestions } from '../engines/questionnaireGenerator'
 import { createLabSession } from '../models/labSession'
@@ -12,6 +14,19 @@ import { useSessionDraft } from '../context/sessionDraft'
 import type { QuestionnaireResponse } from '../types/session'
 
 type ResponseDraft = Record<string, string | string[]>
+
+// Plain-language help for questions that use medical words.
+const questionGlossaryTerms: Record<string, string> = {
+  'q4-cycle-regularity-3-months': 'Cycle irregularity',
+  'q7-menstrual-flow': 'Menstrual flow',
+  'q10-unwanted-hair': 'Hirsutism',
+  'q11-hair-thinning': 'Hair thinning',
+  'q12-hair-growth-location': 'Hirsutism',
+  'q16-spotting': 'Spotting',
+  'q19-fatigue-frequency': 'Fatigue',
+  'q9-acne': 'Acne',
+  'q29-medication-scheduled': 'Adherence',
+}
 
 const sectionLabels: Record<QuestionDefinition['level'], string> = {
   base: 'Base questions',
@@ -111,7 +126,7 @@ function questionsByPage(questions: QuestionDefinition[]) {
 
 export function QuestionnairePage() {
   const navigate = useNavigate()
-  const { api, token } = useAuth()
+  const { api, token, user } = useAuth()
   const { draft, clearDraft } = useSessionDraft()
   const prefilledResponses = useMemo<ResponseDraft>(() => {
     if (!draft) return {} as ResponseDraft
@@ -121,7 +136,17 @@ export function QuestionnairePage() {
       'q3-height': draft.input.heightCm ? String(draft.input.heightCm) : '',
     }
   }, [draft])
-  const [responses, setResponses] = useState<ResponseDraft>(() => ({ ...prefilledResponses }))
+  // Answers survive an accidental refresh (this browser tab only).
+  const [storedResponses, setResponses, clearResponses] = usePersistentState<ResponseDraft>(
+    user && draft ? `questionnaire.${user.userId}` : null,
+    {},
+  )
+  // Measurements from the lab step always win over anything stored earlier.
+  const responses = useMemo<ResponseDraft>(
+    () => ({ ...storedResponses, ...prefilledResponses }),
+    [prefilledResponses, storedResponses],
+  )
+  const [isSaving, setIsSaving] = useState(false)
   const [includeDailyContext] = useState(true)
   const [hasMedicationRecords] = useState(true)
   const [activePageIndex, setActivePageIndex] = useState(0)
@@ -209,9 +234,20 @@ export function QuestionnairePage() {
 
     const session = createLabSession(activeDraft.input, activeDraft.validation, normalizedResponses())
     if (token) {
-      await api.createRecord(token, 'lab-sessions', session)
+      setIsSaving(true)
+      setError('')
+      try {
+        await api.createRecord(token, 'lab-sessions', session)
+      } catch {
+        setError('The session could not be saved. Your answers are kept on this page; check your connection and try again.')
+        setIsSaving(false)
+        return
+      }
+      setIsSaving(false)
     }
     setCompletedSessionId(session.sessionId)
+    clearResponses()
+    if (user) removeDraft(`lab.${user.userId}`)
     clearDraft()
     notifyRecordsChanged()
     navigate(`/history/${session.sessionId}`)
@@ -306,7 +342,7 @@ export function QuestionnairePage() {
               Next section
             </PrimaryButton>
           ) : (
-            <PrimaryButton type="submit">
+            <PrimaryButton disabled={isSaving} type="submit">
               <Save size={18} />
               Save session
             </PrimaryButton>
@@ -380,9 +416,15 @@ function QuestionField({
   error?: string
 }) {
   const fieldLabel = `${question.code}. ${question.label}${question.required ? '' : ' (optional)'}`
+  const glossaryTerm = questionGlossaryTerms[question.id]
+  const glossaryEntry = glossaryTerm ? findGeneralTerm(glossaryTerm) : undefined
 
   return (
-    <Field label={fieldLabel} error={error}>
+    <Field
+      error={error}
+      hint={glossaryEntry ? <InfoTip term={glossaryEntry.term}>{glossaryEntry.plain}</InfoTip> : undefined}
+      label={fieldLabel}
+    >
       {question.type === 'select' ? (
         <select
           aria-label={question.label}

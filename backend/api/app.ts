@@ -14,6 +14,7 @@ import {
   MonitoringValidationError,
   validateCredentialsRequest,
   validateMonitoringRecord,
+  validateRecoveryRequest,
   validateReportRequest,
   validateScanRequest,
   validateTermsRequest,
@@ -108,7 +109,25 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       const body = validateCredentialsRequest(await readJson(req))
       await enforceRateLimit(requestClientKey(req), 'register', 5, 60 * 60 * 1000)
       const user = await protectedDatabase.createUser(body.email, body.password)
-      sendJson(res, 201, { user })
+      // Shown once so the user can reset a forgotten password without email.
+      const recoveryCode = await protectedDatabase.issueRecoveryCode(user.userId)
+      sendJson(res, 201, { user, recoveryCode })
+      return
+    }
+
+    if (scope === 'auth' && action === 'recover') {
+      requirePost(req)
+      const body = validateRecoveryRequest(await readJson(req))
+      const recoverKey = createHash('sha256')
+        .update(`${requestClientKey(req)}:${body.email.trim().toLowerCase()}`)
+        .digest('hex')
+      await enforceRateLimit(recoverKey, 'password-recovery', 5, 15 * 60 * 1000)
+      const recoveryCode = await protectedDatabase.resetPasswordWithRecoveryCode(
+        body.email,
+        body.recoveryCode,
+        body.newPassword,
+      )
+      sendJson(res, 200, { reset: true, recoveryCode })
       return
     }
 
@@ -131,6 +150,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         200,
         await protectedDatabase.sessionProfile(req.headers.authorization?.replace('Bearer ', '') ?? ''),
       )
+      return
+    }
+
+    if (scope === 'auth' && action === 'recovery-code') {
+      requirePost(req)
+      await enforceRateLimit(user.userId, 'recovery-code', 5, 60 * 60 * 1000)
+      sendJson(res, 201, { recoveryCode: await protectedDatabase.issueRecoveryCode(user.userId) })
       return
     }
 
@@ -371,6 +397,10 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     }
     if (message === 'account already exists') {
       sendJson(res, 409, { error: 'account already exists' })
+      return
+    }
+    if (message === 'invalid recovery details') {
+      sendJson(res, 401, { error: 'email or recovery code is incorrect' })
       return
     }
     if (message === 'invalid email or password') {

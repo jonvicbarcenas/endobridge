@@ -2,6 +2,8 @@ export interface UserRecord {
   userId: string
   email: string
   passwordHash: string
+  /** scrypt hash of the one-time account recovery code ("forgot password"). */
+  recoveryCodeHash?: string
   createdAt: string
 }
 

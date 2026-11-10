@@ -11,6 +11,13 @@ export interface AuthContextValue {
   register: (email: string, password: string) => Promise<void>
   acceptTerms: () => Promise<void>
   logout: () => Promise<void>
+  /** One-time recovery code to show after registration, until the user dismisses it. */
+  recoveryCode: string | null
+  dismissRecoveryCode: () => void
+  /** Resets a forgotten password and returns the replacement recovery code. */
+  recoverPassword: (email: string, recoveryCode: string, newPassword: string) => Promise<string>
+  /** Issues a new recovery code for the signed-in user (the old one stops working). */
+  regenerateRecoveryCode: () => Promise<string>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

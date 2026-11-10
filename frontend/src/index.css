@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/*
+ * Brand accent. Survey feedback asked for a warmer, more distinctive look, so the
+ * accent used across the app (written as `indigo-*` in components) is remapped
+ * to a rose-pink scale here. Delete this block to restore the original indigo.
+ */
+@theme {
+  --color-indigo-50: oklch(97.1% 0.014 343.198);
+  --color-indigo-100: oklch(94.8% 0.028 342.258);
+  --color-indigo-200: oklch(89.9% 0.061 343.231);
+  --color-indigo-300: oklch(82.3% 0.12 346.018);
+  --color-indigo-400: oklch(71.8% 0.202 349.761);
+  --color-indigo-500: oklch(65.6% 0.241 354.308);
+  --color-indigo-600: oklch(59.2% 0.249 0.584);
+  --color-indigo-700: oklch(52.5% 0.223 3.958);
+  --color-indigo-800: oklch(45.9% 0.187 3.815);
+  --color-indigo-900: oklch(40.8% 0.153 2.432);
+  --color-indigo-950: oklch(28.4% 0.109 3.907);
+}
+
 :root {
   color: #1e293b;
   background: #f7faf8;
@@ -33,7 +52,7 @@ textarea {
 }
 
 html {
-  background: #f6f8fb;
+  background: #faf6f8;
 }
 
 *::-webkit-scrollbar {

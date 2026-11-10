@@ -103,6 +103,8 @@ export interface MedicationRecord {
   medId: string
   name: string
   dosage: string
+  /** Optional medication form, for example Tablet or Syrup. */
+  dosageForm?: string
   scheduleTime: string
   frequency: MedicationFrequency
   createdAt: string

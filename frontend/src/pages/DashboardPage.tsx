@@ -11,6 +11,7 @@ import {
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { EmptyState, Panel, StatCard } from '../components/ui'
+import { WeeklySummary } from '../components/WeeklySummary'
 import { useAuth } from '../context/auth'
 import type { DailyLogRecord, LabDocumentRecord } from '../types/monitoring'
 import type { LabSession, MedicationRecord, SymptomEntry } from '../types/session'
@@ -38,7 +39,7 @@ export function DashboardPage() {
       setMedications(nextMedications)
       setDailyLogs(nextDailyLogs)
       setDocuments(nextDocuments)
-    })
+    }).catch(() => undefined)
   }, [api, token])
 
   const activeMedications = medications.filter((medication) => medication.isActive)
@@ -78,8 +79,10 @@ export function DashboardPage() {
         />
       </div>
 
+      <WeeklySummary logs={dailyLogs} />
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Panel eyebrow="SRS/SDD modules" title="Continue monitoring">
+        <Panel eyebrow="Next steps" title="Continue monitoring">
           <div className="grid gap-3 md:grid-cols-2">
             <ActionCard
               description="Enter the fixed ten-value lab panel alongside your cycle and symptom history."

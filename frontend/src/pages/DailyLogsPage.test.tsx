@@ -17,6 +17,10 @@ const authValue: AuthContextValue = {
   register: vi.fn(),
   acceptTerms: vi.fn(),
   logout: vi.fn(),
+  recoveryCode: null,
+  dismissRecoveryCode: vi.fn(),
+  recoverPassword: vi.fn(),
+  regenerateRecoveryCode: vi.fn(),
 }
 
 afterEach(cleanup)

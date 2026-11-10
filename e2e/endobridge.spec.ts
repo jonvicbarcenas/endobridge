@@ -84,6 +84,10 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
   await page.getByLabel('Confirm password').fill('Password123!')
   await page.getByRole('button', { name: 'Create account' }).click()
 
+  await expect(page.getByText('Save your recovery code')).toBeVisible()
+  await page.getByLabel('I saved my recovery code somewhere safe.').check()
+  await page.getByRole('button', { name: 'I saved it, continue' }).click()
+
   await expect(page.getByText('Terms, privacy consent, and safety disclaimer')).toBeVisible()
   await page.getByLabel('I accept the EndoBridge Terms of Use.').check()
   await page.getByLabel('I consent to secure account storage for my submitted monitoring records.').check()
@@ -91,6 +95,7 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
   await page.getByLabel(/I understand that EndoBridge is not medical advice/).check()
   await page.getByRole('button', { name: 'Accept and continue' }).click()
   await expect(page).toHaveURL(/dashboard/)
+  await page.getByRole('button', { name: 'Close tour' }).click()
 
   const token = await page.evaluate(() => sessionStorage.getItem('endobridge.sessionToken'))
   expect(token).toBeTruthy()
@@ -126,7 +131,7 @@ test('registers, accepts terms, tracks monitoring data, uploads PDF, and shows h
 
   await page.goto('/medications')
   await page.getByLabel('Medication name').fill('Prescribed medication')
-  await page.getByLabel('Dosage').fill('500 mg')
+  await page.getByLabel('Dosage').fill('500')
   await page.getByLabel('Schedule time').fill('08:30')
   await page.getByRole('button', { name: 'Save reminder' }).click()
   await expect(page.getByText('Medication reminder saved to your account.')).toBeVisible()

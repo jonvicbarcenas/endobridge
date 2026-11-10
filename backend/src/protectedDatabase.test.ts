@@ -23,6 +23,33 @@ describe('protectedDatabase scaffold', () => {
     await expect(protectedDatabase.consumeRateLimit(key, 'test', 1, 60_000)).resolves.toBe(false)
   })
 
+  it('resets a forgotten password with a one-time recovery code', async () => {
+    const email = `recover-${randomUUID()}@example.com`
+    const user = await protectedDatabase.createUser(email, 'old-password')
+    const code = await protectedDatabase.issueRecoveryCode(user.userId)
+    expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/)
+    const oldSession = await protectedDatabase.createSession(email, 'old-password')
+
+    await expect(
+      protectedDatabase.resetPasswordWithRecoveryCode(email, 'AAAA-AAAA-AAAA-AAAA', 'new-password'),
+    ).rejects.toThrow(/invalid recovery details/)
+
+    // Lowercase and missing dashes are accepted.
+    const nextCode = await protectedDatabase.resetPasswordWithRecoveryCode(
+      email,
+      code.toLowerCase().replace(/-/g, ''),
+      'new-password',
+    )
+    expect(nextCode).not.toBe(code)
+    await expect(protectedDatabase.authenticate(oldSession.token)).rejects.toThrow(/unauthorized/i)
+    await expect(protectedDatabase.createSession(email, 'old-password')).rejects.toThrow()
+    await expect(protectedDatabase.createSession(email, 'new-password')).resolves.toBeTruthy()
+    // The used code no longer works.
+    await expect(
+      protectedDatabase.resetPasswordWithRecoveryCode(email, code, 'another-password'),
+    ).rejects.toThrow(/invalid recovery details/)
+  })
+
   it('keeps monitoring records account-scoped and supports deletion logs', async () => {
     const leftEmail = `left-${randomUUID()}@example.com`
     const rightEmail = `right-${randomUUID()}@example.com`

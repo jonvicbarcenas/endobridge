@@ -45,6 +45,10 @@ function renderQuestionnaire(currentDraft = draft) {
     register: vi.fn(),
     acceptTerms: vi.fn(),
     logout: vi.fn(),
+    recoveryCode: null,
+    dismissRecoveryCode: vi.fn(),
+    recoverPassword: vi.fn(),
+    regenerateRecoveryCode: vi.fn(),
   }
 
   render(
