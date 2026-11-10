@@ -205,6 +205,7 @@ const medicationSchema = z
     medId: idSchema,
     name: shortText.min(1),
     dosage: shortText.min(1),
+    dosageForm: z.string().max(60).optional(),
     scheduleTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     frequency: z.enum(['daily', 'weekly', 'asNeeded']),
     createdAt: isoDate,
@@ -324,6 +325,20 @@ export function validateCredentialsRequest(data: unknown) {
       .strict(),
     data,
     'invalid credentials request',
+  )
+}
+
+export function validateRecoveryRequest(data: unknown) {
+  return parseRequest(
+    z
+      .object({
+        email: z.string().trim().email().max(254),
+        recoveryCode: z.string().trim().min(16).max(40),
+        newPassword: z.string().min(8).max(128),
+      })
+      .strict(),
+    data,
+    'invalid recovery request',
   )
 }
 

@@ -19,6 +19,10 @@ function renderGate(register: AuthContextValue['register']) {
     register,
     acceptTerms: vi.fn(),
     logout: vi.fn(),
+    recoveryCode: null,
+    dismissRecoveryCode: vi.fn(),
+    recoverPassword: vi.fn(),
+    regenerateRecoveryCode: vi.fn(),
   }
 
   render(

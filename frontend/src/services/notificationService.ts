@@ -1,7 +1,25 @@
+import { formatDosage } from '../config/medications'
 import type { MedicationRecord } from '../types/session'
 
+export type AlertMode = 'push' | 'in-app'
+
+export const alertModeChangedEvent = 'endobridge:alert-mode-changed'
+
+/** Current alert mode without prompting the user. */
+export function currentAlertMode(): AlertMode {
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'in-app'
+  return Notification.permission === 'granted' ? 'push' : 'in-app'
+}
+
+export function registerReminderServiceWorker() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Without a service worker, desktop browsers can still use `new Notification`.
+  })
+}
+
 export class NotificationService {
-  mode: 'push' | 'in-app' = 'in-app'
+  mode: AlertMode = currentAlertMode()
 
   async init() {
     if (!('Notification' in window)) {
@@ -9,26 +27,43 @@ export class NotificationService {
       return this.mode
     }
 
-    const permission = await Notification.requestPermission()
+    const permission =
+      Notification.permission === 'default'
+        ? await Notification.requestPermission()
+        : Notification.permission
     this.mode = permission === 'granted' ? 'push' : 'in-app'
+    window.dispatchEvent(new Event(alertModeChangedEvent))
     return this.mode
   }
 
-  scheduleReminder(medication: MedicationRecord) {
-    if (!medication.nextReminderAt || !medication.isActive) return
+  /**
+   * Shows a system notification. Returns false when the browser blocked it, so
+   * the caller can rely on the in-app banner instead.
+   */
+  async sendReminder(medication: MedicationRecord) {
+    if (currentAlertMode() !== 'push') return false
+    const title = `Medication reminder: ${medication.name}`
+    const options: NotificationOptions = {
+      body: `${formatDosage(medication)} scheduled for ${medication.scheduleTime}`,
+      tag: `med-${medication.medId}`,
+      icon: '/favicon.svg',
+    }
 
-    const delay = Math.max(Date.parse(medication.nextReminderAt) - Date.now(), 0)
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration()
+      if (registration) {
+        await registration.showNotification(title, options)
+        return true
+      }
+    } catch {
+      // fall through to the page-level API
+    }
 
-    window.setTimeout(() => {
-      this.sendReminder(medication)
-    }, delay)
-  }
-
-  sendReminder(medication: MedicationRecord) {
-    if (this.mode === 'push' && 'Notification' in window) {
-      new Notification(`Medication reminder: ${medication.name}`, {
-        body: `${medication.dosage} scheduled for ${medication.scheduleTime}`,
-      })
+    try {
+      new Notification(title, options)
+      return true
+    } catch {
+      return false
     }
   }
 }

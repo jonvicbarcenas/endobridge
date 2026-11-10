@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthContext, type AuthContextValue } from '../context/auth'
 import { AppShell } from './AppShell'
 
@@ -16,9 +16,16 @@ const authValue: AuthContextValue = {
   register: vi.fn(),
   acceptTerms: vi.fn(),
   logout: vi.fn(),
+  recoveryCode: null,
+  dismissRecoveryCode: vi.fn(),
+  recoverPassword: vi.fn(),
+  regenerateRecoveryCode: vi.fn(),
 }
 
 afterEach(cleanup)
+beforeEach(() => {
+  localStorage.setItem('endobridge.tourSeen.user-1', '1')
+})
 
 function renderAppShell() {
   render(
@@ -59,5 +66,17 @@ describe('AppShell', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Mobile navigation' })).not.toBeInTheDocument()
     expect(openButton).toHaveFocus()
+  })
+
+  it('opens the onboarding tour for a first-time user and remembers when it is closed', async () => {
+    const user = userEvent.setup()
+    localStorage.removeItem('endobridge.tourSeen.user-1')
+    renderAppShell()
+
+    expect(await screen.findByRole('dialog', { name: 'Welcome to EndoBridge' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Close tour' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Welcome to EndoBridge' })).not.toBeInTheDocument()
+    expect(localStorage.getItem('endobridge.tourSeen.user-1')).toBe('1')
   })
 })

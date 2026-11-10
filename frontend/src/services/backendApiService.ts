@@ -49,9 +49,24 @@ async function request<T>(
 
 export class BackendAPIService {
   register(email: string, password: string) {
-    return request<{ user: AuthResponse['user'] }>('/auth/register', {
+    return request<{ user: AuthResponse['user']; recoveryCode?: string }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    })
+  }
+
+  recoverPassword(email: string, recoveryCode: string, newPassword: string) {
+    return request<{ reset: true; recoveryCode: string }>('/auth/recover', {
+      method: 'POST',
+      body: JSON.stringify({ email, recoveryCode, newPassword }),
+    })
+  }
+
+  issueRecoveryCode(token: string) {
+    return request<{ recoveryCode: string }>('/auth/recovery-code', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({}),
     })
   }
 
@@ -128,6 +143,57 @@ export class BackendAPIService {
       method: 'POST',
       token,
       body: JSON.stringify({ dataUrl }),
+    })
+  }
+
+  /**
+   * Same as scanLabDocument, but reports upload progress (0-1) and can be
+   * cancelled. fetch() cannot report upload progress, so this uses XHR.
+   */
+  scanLabDocumentWithProgress<T>(
+    token: string,
+    dataUrl: string,
+    {
+      onUploadProgress,
+      onUploadComplete,
+      signal,
+    }: {
+      onUploadProgress?: (fraction: number) => void
+      onUploadComplete?: () => void
+      signal?: AbortSignal
+    } = {},
+  ) {
+    if (typeof XMLHttpRequest === 'undefined') return this.scanLabDocument<T>(token, dataUrl)
+
+    return new Promise<T>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${API_BASE_URL}/api/lab-documents/scan`)
+      xhr.setRequestHeader('Content-Type', 'application/json')
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+      xhr.timeout = 120_000
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onUploadProgress?.(event.loaded / event.total)
+      }
+      xhr.upload.onload = () => onUploadComplete?.()
+      xhr.onload = () => {
+        let body: unknown
+        try {
+          body = JSON.parse(xhr.responseText)
+        } catch {
+          body = null
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(body as T)
+          return
+        }
+        const message = (body as { error?: string } | null)?.error ?? 'backend request failed'
+        reject(new BackendApiError(message, xhr.status))
+      }
+      xhr.onerror = () => reject(new BackendApiError('network error', 0))
+      xhr.ontimeout = () => reject(new BackendApiError('request timed out', 408))
+      xhr.onabort = () => reject(new DOMException('Upload cancelled', 'AbortError'))
+      signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+      xhr.send(JSON.stringify({ dataUrl }))
     })
   }
 

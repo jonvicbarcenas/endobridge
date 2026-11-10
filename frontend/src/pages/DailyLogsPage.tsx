@@ -12,7 +12,9 @@ import {
 } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { EmptyState, Field, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
+import { EmptyState, Field, InfoTip, PrimaryButton, SecondaryButton, fieldControlClass } from '../components/ui'
+import { findGeneralTerm } from '../config/glossary'
+import { usePersistentState } from '../hooks/usePersistentState'
 import { useAuth } from '../context/auth'
 import { notifyRecordsChanged } from '../context/records'
 import { interpretDailyLog } from '../engines/dailyLogInterpretationEngine'
@@ -121,11 +123,15 @@ function formFromLog(log: DailyLogRecord): FormState {
 }
 
 export function DailyLogsPage() {
-  const { api, token } = useAuth()
+  const { api, token, user } = useAuth()
   const [logs, setLogs] = useState<DailyLogRecord[]>([])
-  const [form, setForm] = useState<FormState>(emptyForm)
+  // The form and the log being edited survive an accidental refresh (this tab only).
+  const [form, setForm] = usePersistentState<FormState>(user ? `daily.${user.userId}` : null, emptyForm)
   const [message, setMessage] = useState('')
-  const [editingLog, setEditingLog] = useState<DailyLogRecord | null>(null)
+  const [editingLog, setEditingLog] = usePersistentState<DailyLogRecord | null>(
+    user ? `daily-editing.${user.userId}` : null,
+    null,
+  )
   const [activeSection, setActiveSection] = useState<CompanionSectionId>('body')
 
   useEffect(() => {
@@ -333,6 +339,15 @@ export function DailyLogsPage() {
             </div>
           </section>
 
+          <section className="rounded-[18px] border border-indigo-100 bg-indigo-50/60 p-5">
+            <p className="text-sm font-semibold text-slate-950">How your daily logs are used</p>
+            <ol className="mt-3 space-y-2 text-sm leading-5 text-slate-700">
+              <li><span className="font-semibold text-indigo-700">1.</span> Each day you save becomes one entry in Recent logs.</li>
+              <li><span className="font-semibold text-indigo-700">2.</span> The Dashboard turns your last 7 days into a weekly summary (sleep, stress, mood).</li>
+              <li><span className="font-semibold text-indigo-700">3.</span> When you generate a report for a lab session, logs from around that time are included as context.</li>
+            </ol>
+          </section>
+
           <section className="rounded-[18px] border border-slate-200 bg-white p-5 shadow-sm shadow-slate-200/60">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -425,6 +440,7 @@ function CompanionSection({
         title="Body signals"
       >
         <ChipGroup
+          hint={<InfoTip term="Spotting">{findGeneralTerm('Spotting')?.plain}</InfoTip>}
           label="Cycle event"
           onSelect={(value) => setForm((current) => ({ ...current, cycleEvent: value }))}
           options={['No cycle event', 'Period started', 'Period ended', 'Spotting', 'Cramps', 'Irregular timing']}
@@ -436,7 +452,7 @@ function CompanionSection({
             onChange={(event) =>
               setForm((current) => ({ ...current, symptomsNote: event.target.value }))
             }
-            placeholder="Optional notes such as acne, fatigue, bloating, cravings, hirsutism-related concerns, or weight changes."
+            placeholder="Optional notes such as acne, fatigue, bloating, cravings, excess hair growth, or weight changes."
             value={form.symptomsNote}
           />
         </Field>
@@ -449,7 +465,8 @@ function CompanionSection({
               symptomsNote: updateTextList(current.symptomsNote, value),
             }))
           }
-          options={['Acne', 'Fatigue', 'Bloating', 'Cramps', 'Cravings', 'Hirsutism concern', 'Weight change']}
+          hint={<InfoTip term="Hirsutism">{findGeneralTerm('Hirsutism')?.plain}</InfoTip>}
+          options={['Acne', 'Fatigue', 'Bloating', 'Cramps', 'Cravings', 'Excess hair growth (hirsutism)', 'Weight change']}
           value={form.symptomsNote}
         />
         <Field label="Weight / weight change context">
@@ -548,16 +565,18 @@ function CompanionSection({
         title="Mood & stress"
       >
         <ChipGroup
+          allowMultiple
+          description="Pick every mood that fits today. Mixed days are common."
           label="Mood"
-          onSelect={(value) => setForm((current) => ({ ...current, mood: value }))}
-          options={['Calm', 'Okay', 'Low energy', 'Irritable', 'Anxious', 'Good']}
+          onSelect={(value) => setForm((current) => ({ ...current, mood: updateTextList(current.mood, value) }))}
+          options={['Calm', 'Okay', 'Good', 'Low energy', 'Irritable', 'Anxious', 'Sad', 'Motivated']}
           value={form.mood}
         />
         <Field label="Mood note">
           <input
             className={fieldControlClass}
             onChange={(event) => setForm((current) => ({ ...current, mood: event.target.value }))}
-            placeholder="Optional plain-language mood label"
+            placeholder="Selected moods appear here. You can also type your own, separated by commas."
             value={form.mood}
           />
         </Field>
@@ -591,6 +610,7 @@ function CompanionSection({
       title="Medication note"
     >
       <ChipGroup
+        hint={<InfoTip term="Adherence">{findGeneralTerm('Adherence')?.plain}</InfoTip>}
         label="Adherence note"
         onSelect={(value) => setForm((current) => ({ ...current, medicationAdherence: value }))}
         options={['Taken as prescribed', 'Skipped', 'Missed', 'Not applicable', 'Reminder only']}
@@ -643,12 +663,16 @@ function SectionShell({
 
 function ChipGroup({
   allowMultiple = false,
+  description,
+  hint,
   label,
   onSelect,
   options,
   value,
 }: {
   allowMultiple?: boolean
+  description?: string
+  hint?: ReactNode
   label: string
   onSelect: (value: string) => void
   options: string[]
@@ -656,7 +680,12 @@ function ChipGroup({
 }) {
   return (
     <div>
-      <p className="mb-2 text-sm font-medium text-slate-700">{label}</p>
+      <p className="mb-2 text-sm font-medium text-slate-700">
+        {label}
+        {allowMultiple ? <span className="ml-1 font-normal text-slate-500">(choose any)</span> : null}
+        {hint}
+      </p>
+      {description ? <p className="-mt-1 mb-2 text-xs text-slate-500">{description}</p> : null}
       <div aria-label={label} className="flex flex-wrap gap-2" role="group">
         {options.map((option) => {
           const selected = allowMultiple

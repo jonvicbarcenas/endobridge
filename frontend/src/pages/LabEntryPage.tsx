@@ -1,8 +1,12 @@
-import { ClipboardList, FileText, FlaskConical, Upload } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ClipboardList, FileText, FlaskConical, Loader2, RotateCcw, Upload, X } from 'lucide-react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Field, Panel, PrimaryButton, StatusBadge, fieldControlClass } from '../components/ui'
+import { Field, InfoTip, Panel, PrimaryButton, SecondaryButton, StatusBadge, fieldControlClass } from '../components/ui'
+import { biomarkerGlossary, findGeneralTerm, unitGlossary } from '../config/glossary'
+import { usePersistentState } from '../hooks/usePersistentState'
+import { BackendApiError } from '../services/backendApiService'
+import { formatBytes, prepareLabUpload } from '../services/imageCompression'
 import { allBiomarkers, assayDependentBiomarkers, referenceRanges, requiredNewBiomarkers } from '../config/referenceRanges'
 import { calculateBmi } from '../engines/measurementEngine'
 import { validateLabSessionInput } from '../engines/validationEngine'
@@ -101,6 +105,52 @@ function createDocumentId() {
     : `doc-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+type UploadPhase = 'idle' | 'preparing' | 'uploading' | 'scanning' | 'saving' | 'done' | 'warning' | 'error'
+
+interface UploadState {
+  phase: UploadPhase
+  fileName?: string
+  progress?: number
+  message: string
+}
+
+const supportedUploadTypes = [
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]
+const MAX_UPLOAD_BYTES = 6_000_000
+
+function friendlyUploadError(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return 'Upload cancelled. Choose the file again when you are ready.'
+  }
+  if (error instanceof BackendApiError) {
+    if (error.status === 0) return 'Connection problem: the file could not reach EndoBridge. Check your internet connection, then tap Retry.'
+    if (error.status === 408) return 'The upload took too long. Try again on a stronger connection, or use a smaller photo.'
+    if (error.status === 413) return 'This file is too large to scan. Use a PDF or photo under 6 MB.'
+    if (error.status === 429) return 'You scanned several files in a short time. Wait about a minute, then tap Retry.'
+    if (error.status === 401) return 'Your login session expired. Log in again, then upload the file.'
+    if (error.status === 400) return 'This file could not be read as a lab report. Use a clear PDF, photo (JPG, PNG, WEBP), DOCX, or text file.'
+    if (error.status === 403) return 'Accept the terms and privacy notice before uploading files.'
+  }
+  return 'Something went wrong while scanning the file. Tap Retry, or type the values into the form.'
+}
+
+const uploadPhaseLabel: Record<UploadPhase, string> = {
+  idle: '',
+  preparing: 'Preparing file',
+  uploading: 'Uploading',
+  scanning: 'Reading lab values',
+  saving: 'Saving to your account',
+  done: 'Scan complete',
+  warning: 'Scan finished with a warning',
+  error: 'Upload failed',
+}
+
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
@@ -112,16 +162,31 @@ function readFileAsDataUrl(file: File) {
 
 export function LabEntryPage() {
   const navigate = useNavigate()
-  const { api, token } = useAuth()
+  const { api, token, user } = useAuth()
   const { setDraft } = useSessionDraft()
-  const [age, setAge] = useState('')
-  const [weightKg, setWeightKg] = useState('')
-  const [heightCm, setHeightCm] = useState('')
-  const [biomarkerValues, setBiomarkerValues] = useState(initialBiomarkers)
+  // Lab form drafts survive an accidental refresh (kept in this browser tab only).
+  const [labDraft, setLabDraft] = usePersistentState(user ? `lab.${user.userId}` : null, {
+    age: '',
+    weightKg: '',
+    heightCm: '',
+    biomarkerValues: initialBiomarkers,
+    sessionDocumentIds: [] as string[],
+  })
+  const { age, weightKg, heightCm, biomarkerValues, sessionDocumentIds } = labDraft
+  const setAge = (value: string) => setLabDraft((current) => ({ ...current, age: value }))
+  const setWeightKg = (value: string) => setLabDraft((current) => ({ ...current, weightKg: value }))
+  const setHeightCm = (value: string) => setLabDraft((current) => ({ ...current, heightCm: value }))
+  const setBiomarkerValues = (
+    update: (current: Record<ActiveBiomarkerKey, string>) => Record<ActiveBiomarkerKey, string>,
+  ) => setLabDraft((current) => ({ ...current, biomarkerValues: update(current.biomarkerValues) }))
+  const setSessionDocumentIds = (update: (current: string[]) => string[]) =>
+    setLabDraft((current) => ({ ...current, sessionDocumentIds: update(current.sessionDocumentIds) }))
   const [submitAttempted, setSubmitAttempted] = useState(false)
   const [documents, setDocuments] = useState<LabDocumentRecord[]>([])
-  const [sessionDocumentIds, setSessionDocumentIds] = useState<string[]>([])
-  const [uploadMessage, setUploadMessage] = useState('')
+  const [upload, setUpload] = useState<UploadState>({ phase: 'idle', message: '' })
+  const lastFileRef = useRef<File | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const isUploading = ['preparing', 'uploading', 'scanning', 'saving'].includes(upload.phase)
   const ageInputRef = useRef<HTMLInputElement>(null)
   const weightInputRef = useRef<HTMLInputElement>(null)
   const heightInputRef = useRef<HTMLInputElement>(null)
@@ -143,8 +208,13 @@ export function LabEntryPage() {
 
   useEffect(() => {
     if (!token) return
-    api.listRecordData<LabDocumentRecord>(token, 'lab-documents').then(setDocuments)
+    api
+      .listRecordData<LabDocumentRecord>(token, 'lab-documents')
+      .then(setDocuments)
+      .catch(() => setDocuments([]))
   }, [api, token])
+
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   function fieldError(key: BiomarkerKey) {
     if (!submitAttempted) return undefined
@@ -187,58 +257,112 @@ export function LabEntryPage() {
 
   async function uploadLabResultFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
-    if (!file || !token) return
-
-    const supportedTypes = [
-      'application/pdf',
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-      'text/plain',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ]
-    if (!supportedTypes.includes(file.type)) {
-      setUploadMessage('Upload a PDF, image, DOCX, or text lab result file.')
-      return
-    }
-    if (file.size > 6_000_000) {
-      setUploadMessage('Lab result files must be 6 MB or smaller.')
-      return
-    }
-
-    setUploadMessage('Scanning lab result file for biomarker values...')
-    const dataUrl = await readFileAsDataUrl(file)
-    const scan = await api.scanLabDocument<{
-      extractionStatus: LabDocumentRecord['extractionStatus']
-      extractedTextPreview: string
-      extractedBiomarkers: Partial<Record<BiomarkerKey, ExtractedBiomarkerValue>>
-      scanMessage: string
-    }>(token, dataUrl)
-
-    const record: LabDocumentRecord = {
-      documentId: createDocumentId(),
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size,
-      uploadedAt: new Date().toISOString(),
-      dataUrl,
-      extractionStatus: scan.extractionStatus,
-      extractedTextPreview: scan.extractedTextPreview,
-      extractedBiomarkers: scan.extractedBiomarkers,
-      scanMessage: scan.scanMessage,
-    }
-
-    await api.createRecord<LabDocumentRecord>(token, 'lab-documents', record)
-    setDocuments((current) => [record, ...current])
-    setSessionDocumentIds((current) => [record.documentId, ...current])
-    setLatestScan({
-      fileName: file.name,
-      extractedBiomarkers: scan.extractedBiomarkers,
-      message: scan.scanMessage,
-    })
-    setUploadMessage(`${scan.scanMessage} Review extracted values before using them.`)
-    notifyRecordsChanged()
     event.target.value = ''
+    if (!file) return
+    await scanFile(file)
+  }
+
+  async function scanFile(originalFile: File) {
+    if (!token) return
+    lastFileRef.current = originalFile
+
+    if (!supportedUploadTypes.includes(originalFile.type)) {
+      setUpload({
+        phase: 'error',
+        fileName: originalFile.name,
+        message: 'This file type is not supported. Upload a PDF, photo (JPG, PNG, WEBP), DOCX, or text file.',
+      })
+      lastFileRef.current = null
+      return
+    }
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      setUpload({ phase: 'preparing', fileName: originalFile.name, message: 'Optimizing the file for a faster upload...' })
+      const prepared = await prepareLabUpload(originalFile)
+      const file = prepared.file
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setUpload({
+          phase: 'error',
+          fileName: originalFile.name,
+          message: `This file is ${formatBytes(file.size)}. Lab result files must be 6 MB or smaller. Try a PDF or a smaller photo.`,
+        })
+        lastFileRef.current = null
+        return
+      }
+
+      const sizeNote = prepared.wasCompressed
+        ? `Photo reduced from ${formatBytes(prepared.originalSize)} to ${formatBytes(file.size)} for a faster upload.`
+        : `File size ${formatBytes(file.size)}.`
+      const dataUrl = await readFileAsDataUrl(file)
+      setUpload({ phase: 'uploading', fileName: originalFile.name, progress: 0, message: sizeNote })
+
+      const scan = await api.scanLabDocumentWithProgress<{
+        extractionStatus: LabDocumentRecord['extractionStatus']
+        extractedTextPreview: string
+        extractedBiomarkers: Partial<Record<BiomarkerKey, ExtractedBiomarkerValue>>
+        scanMessage: string
+      }>(token, dataUrl, {
+        signal: controller.signal,
+        onUploadProgress: (fraction) =>
+          setUpload((current) => ({ ...current, progress: Math.round(fraction * 100) })),
+        onUploadComplete: () =>
+          setUpload((current) => ({
+            ...current,
+            phase: 'scanning',
+            progress: undefined,
+            message: 'Upload finished. Reading the lab values can take up to 30 seconds for photos.',
+          })),
+      })
+
+      setUpload((current) => ({ ...current, phase: 'saving', message: 'Saving the file to your account...' }))
+      const record: LabDocumentRecord = {
+        documentId: createDocumentId(),
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        uploadedAt: new Date().toISOString(),
+        dataUrl,
+        extractionStatus: scan.extractionStatus,
+        extractedTextPreview: scan.extractedTextPreview,
+        extractedBiomarkers: scan.extractedBiomarkers,
+        scanMessage: scan.scanMessage,
+      }
+
+      await api.createRecord<LabDocumentRecord>(token, 'lab-documents', record)
+      setDocuments((current) => [record, ...current])
+      setSessionDocumentIds((current) => [record.documentId, ...current])
+      setLatestScan({
+        fileName: originalFile.name,
+        extractedBiomarkers: scan.extractedBiomarkers ?? {},
+        message: scan.scanMessage,
+      })
+      const foundCount = Object.keys(scan.extractedBiomarkers ?? {}).length
+      const failed = scan.extractionStatus === 'scan-failed' || foundCount === 0
+      setUpload({
+        phase: failed ? 'warning' : 'done',
+        fileName: originalFile.name,
+        message: failed
+          ? `${scan.scanMessage} The file was saved, but no lab values were found. Try a sharper, well-lit photo, or type the values into the form.`
+          : `${scan.scanMessage} Found ${foundCount} of ${allBiomarkers.length} values. Check them against your report before applying.`,
+      })
+      lastFileRef.current = null
+      notifyRecordsChanged()
+    } catch (error) {
+      setUpload({ phase: 'error', fileName: originalFile.name, message: friendlyUploadError(error) })
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null
+    }
+  }
+
+  function cancelUpload() {
+    abortRef.current?.abort()
+  }
+
+  function retryUpload() {
+    if (lastFileRef.current) void scanFile(lastFileRef.current)
   }
 
   function applyExtractedBiomarkers() {
@@ -257,9 +381,13 @@ export function LabEntryPage() {
       })
       return next
     })
-    setUploadMessage(skipped
-      ? 'Matching-unit values were copied. Review other results with your lab or clinician before entering them.'
-      : 'Extracted biomarker values were copied into the form for review.')
+    setUpload((current) => ({
+      ...current,
+      phase: 'done',
+      message: skipped
+        ? 'Values with matching units were copied. Values in other units were skipped: type them in after checking your report.'
+        : 'Extracted values were copied into the form. Check each one against your report.',
+    }))
   }
 
 
@@ -275,7 +403,9 @@ export function LabEntryPage() {
           <FlaskConical className="mt-1 text-emerald-700" size={22} />
           <div>
           <p className="text-sm leading-6 text-slate-600">
-              Enter the ten lab results in your study panel. Clinical range flags are for review with your care team.
+              Enter the ten lab results in your study panel, or upload your report to fill them in. Tap the
+              <span className="mx-1 inline-flex align-middle text-indigo-700" aria-hidden="true">ⓘ</span>
+              icon next to any test to see what it means. Range flags are for review with your care team.
             </p>
           </div>
         </div>
@@ -346,7 +476,10 @@ export function LabEntryPage() {
               value={heightCm}
             />
           </Field>
-          <Field label="BMI (auto-calculated)">
+          <Field
+            hint={<InfoTip term="BMI">{findGeneralTerm('BMI')?.plain}</InfoTip>}
+            label="BMI (auto-calculated)"
+          >
             <input
               aria-label="BMI auto-calculated"
               className={`${fieldControlClass} bg-slate-50 text-slate-600`}
@@ -376,6 +509,21 @@ export function LabEntryPage() {
               <Field
                 error={error}
                 errorId={`biomarker-${key}-error`}
+                hint={
+                  <InfoTip term={`${range.label} (${unitGlossary[range.unit]?.term ?? range.unit})`}>
+                    {biomarkerGlossary[key].plain}
+                    {unitGlossary[range.unit] ? (
+                      <span className="mt-2 block text-slate-500">
+                        Unit: {unitGlossary[range.unit].plain}
+                      </span>
+                    ) : null}
+                    {needsClinicalReview ? (
+                      <span className="mt-2 block text-slate-500">
+                        {findGeneralTerm('Clinician review')?.plain}
+                      </span>
+                    ) : null}
+                  </InfoTip>
+                }
                 key={key}
                 label={`${range.label} (${range.unit})`}
                 required={isRequired}
@@ -433,18 +581,36 @@ export function LabEntryPage() {
               biomarker values. Review extracted values before saving them to a lab session.
             </p>
           </div>
-          <label className="mt-4 flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 focus-within:ring-4 focus-within:ring-slate-200">
-            <Upload size={17} />
-            Upload lab result
+          <label
+            aria-disabled={isUploading}
+            className={`mt-4 flex min-h-32 flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed px-4 py-5 text-center transition focus-within:ring-4 focus-within:ring-indigo-100 ${
+              isUploading
+                ? 'cursor-wait border-slate-300 bg-slate-50'
+                : 'cursor-pointer border-indigo-300 bg-indigo-50/60 hover:border-indigo-500 hover:bg-indigo-50'
+            }`}
+          >
+            <span className="flex size-11 items-center justify-center rounded-full bg-white text-indigo-700 shadow-sm">
+              <Upload size={20} />
+            </span>
+            <span className="text-sm font-semibold text-slate-900">
+              {isUploading ? 'Scanning in progress...' : 'Tap to upload your lab result'}
+            </span>
+            <span className="text-xs text-slate-600">PDF, JPG, PNG, WEBP, DOCX, or TXT, up to 6 MB. Large photos are shrunk automatically.</span>
             <input
               accept=".pdf,.png,.jpg,.jpeg,.webp,.docx,.txt,application/pdf,image/png,image/jpeg,image/webp,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              aria-label="Upload lab result"
               className="sr-only"
+              disabled={isUploading}
               onChange={uploadLabResultFile}
               type="file"
             />
           </label>
-          {uploadMessage ? (
-            <p className="mt-3 text-sm font-medium text-emerald-700">{uploadMessage}</p>
+          {upload.phase !== 'idle' ? (
+            <UploadStatus
+              onCancel={cancelUpload}
+              onRetry={lastFileRef.current ? retryUpload : undefined}
+              upload={upload}
+            />
           ) : null}
           {latestScan && Object.keys(latestScan.extractedBiomarkers).length > 0 ? (
             <div className="mt-4 rounded-[12px] border border-emerald-200 bg-emerald-50 p-3">
@@ -541,5 +707,86 @@ export function LabEntryPage() {
         </Panel>
       </div>
     </form>
+  )
+}
+
+function UploadStatus({
+  upload,
+  onCancel,
+  onRetry,
+}: {
+  upload: UploadState
+  onCancel: () => void
+  onRetry?: () => void
+}) {
+  const busy = ['preparing', 'uploading', 'scanning', 'saving'].includes(upload.phase)
+  const steps: UploadPhase[] = ['preparing', 'uploading', 'scanning', 'saving']
+  const activeStep = steps.indexOf(upload.phase)
+  const tone =
+    upload.phase === 'error'
+      ? 'border-rose-200 bg-rose-50 text-rose-900'
+      : upload.phase === 'warning'
+        ? 'border-amber-200 bg-amber-50 text-amber-900'
+        : upload.phase === 'done'
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+          : 'border-indigo-200 bg-white text-slate-800'
+  const Icon = busy ? Loader2 : upload.phase === 'error' || upload.phase === 'warning' ? AlertTriangle : CheckCircle2
+
+  return (
+    <div
+      aria-live="polite"
+      className={`mt-3 rounded-[12px] border p-3 text-sm ${tone}`}
+      role={upload.phase === 'error' ? 'alert' : 'status'}
+    >
+      <div className="flex items-start gap-2">
+        <Icon aria-hidden="true" className={`mt-0.5 shrink-0 ${busy ? 'animate-spin text-indigo-600' : ''}`} size={17} />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">
+            {uploadPhaseLabel[upload.phase]}
+            {upload.phase === 'uploading' && upload.progress !== undefined ? ` ${upload.progress}%` : ''}
+          </p>
+          {upload.fileName ? <p className="truncate text-xs opacity-80">{upload.fileName}</p> : null}
+          <p className="mt-1 leading-5">{upload.message}</p>
+        </div>
+      </div>
+      {busy ? (
+        <>
+          <ol aria-label="Upload steps" className="mt-3 grid grid-cols-4 gap-1">
+            {steps.map((step, index) => (
+              <li
+                className={`h-1.5 rounded-full ${index < activeStep ? 'bg-indigo-600' : index === activeStep ? 'animate-pulse bg-indigo-400' : 'bg-slate-200'}`}
+                key={step}
+              >
+                <span className="sr-only">{uploadPhaseLabel[step]}</span>
+              </li>
+            ))}
+          </ol>
+          {upload.phase === 'uploading' && upload.progress !== undefined ? (
+            <div
+              aria-label="Upload progress"
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={upload.progress}
+              className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
+              role="progressbar"
+            >
+              <div className="h-full rounded-full bg-indigo-600 transition-all" style={{ width: `${upload.progress}%` }} />
+            </div>
+          ) : null}
+          {upload.phase === 'uploading' || upload.phase === 'scanning' ? (
+            <SecondaryButton className="mt-3 min-h-9 px-3 text-xs" onClick={onCancel}>
+              <X size={14} />
+              Cancel
+            </SecondaryButton>
+          ) : null}
+        </>
+      ) : null}
+      {upload.phase === 'error' && onRetry ? (
+        <SecondaryButton className="mt-3 min-h-9 px-3 text-xs" onClick={onRetry}>
+          <RotateCcw size={14} />
+          Retry
+        </SecondaryButton>
+      ) : null}
+    </div>
   )
 }

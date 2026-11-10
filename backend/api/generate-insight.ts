@@ -22,7 +22,7 @@ const DEFAULT_GEMINI_MODEL = 'models/gemini-3.1-flash-lite'
 const MAX_OUTPUT_TOKENS = 900
 const GEMINI_REQUEST_TIMEOUT_MS = 20_000
 const PROHIBITED_FIELD_PATTERN =
-  /^(medication|medications|medId|dosage|scheduleTime|nextReminderAt|lastTakenAt|isActive)$/i
+  /^(medication|medications|medId|dosage|dosageForm|scheduleTime|nextReminderAt|lastTakenAt|isActive)$/i
 
 class PayloadValidationError extends Error {}
 

@@ -1,4 +1,4 @@
-import { HeartPulse, ShieldCheck } from 'lucide-react'
+import { Copy, HeartPulse, KeyRound, ShieldCheck } from 'lucide-react'
 import type { FormEvent, ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
@@ -6,7 +6,7 @@ import { useAuth } from '../context/auth'
 import { Field, Panel, PrimaryButton, SecondaryButton, fieldControlClass } from './ui'
 
 export function AuthenticatedGate() {
-  const { isLoading, token, termsAccepted } = useAuth()
+  const { isLoading, token, termsAccepted, recoveryCode, dismissRecoveryCode } = useAuth()
 
   useEffect(() => {
     if (isLoading) {
@@ -27,14 +27,32 @@ export function AuthenticatedGate() {
   }
 
   if (!token) return <AuthForm />
+  if (recoveryCode) {
+    return (
+      <GateFrame>
+        <RecoveryCodeCard code={recoveryCode} onContinue={dismissRecoveryCode} />
+      </GateFrame>
+    )
+  }
   if (!termsAccepted) return <TermsGate />
 
   return <Outlet />
 }
 
+function friendlyAuthError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'invalid email or password') return 'Email or password is incorrect.'
+  if (message === 'email or recovery code is incorrect') return 'The email or recovery code is incorrect. Check the code you saved when you created your account.'
+  if (message === 'account already exists') return 'An account with this email already exists. Log in instead, or use "Forgot password?".'
+  if (message === 'too many requests') return 'Too many attempts. Wait 15 minutes and try again.'
+  if (message === 'invalid credentials request' || message === 'invalid recovery request') return 'Check that the email is valid and the new password has at least 8 characters.'
+  if (message === 'Failed to fetch' || message === 'NetworkError when attempting to fetch resource.') return 'Cannot reach EndoBridge. Check your internet connection.'
+  return message || fallback
+}
+
 function AuthForm() {
   const { login, register } = useAuth()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register' | 'recover'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -43,8 +61,17 @@ function AuthForm() {
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    document.title = mode === 'register' ? 'Create Account | EndoBridge' : 'Log In | EndoBridge'
+    document.title =
+      mode === 'register'
+        ? 'Create Account | EndoBridge'
+        : mode === 'recover'
+          ? 'Reset Password | EndoBridge'
+          : 'Log In | EndoBridge'
   }, [mode])
+
+  if (mode === 'recover') {
+    return <RecoverPasswordForm initialEmail={email} onBack={() => setMode('login')} />
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -65,7 +92,7 @@ function AuthForm() {
         await login(email, password)
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unable to authenticate.')
+      setError(friendlyAuthError(error, 'Unable to log in.'))
     } finally {
       setIsSubmitting(false)
     }
@@ -139,7 +166,20 @@ function AuthForm() {
             </Field>
           ) : null}
 
-          {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+          {error ? <p className="text-sm text-rose-700" role="alert">{error}</p> : null}
+
+          {mode === 'login' ? (
+            <button
+              className="text-sm font-semibold text-indigo-700 underline-offset-2 hover:underline focus:outline-none focus:ring-4 focus:ring-indigo-100"
+              onClick={() => {
+                setError('')
+                setMode('recover')
+              }}
+              type="button"
+            >
+              Forgot password?
+            </button>
+          ) : null}
 
           <div className="flex flex-col gap-2 sm:flex-row">
             <PrimaryButton disabled={isSubmitting} type="submit">
@@ -164,6 +204,169 @@ function AuthForm() {
         </form>
       </Panel>
     </GateFrame>
+  )
+}
+
+function RecoverPasswordForm({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const { recoverPassword } = useAuth()
+  const [email, setEmail] = useState(initialEmail)
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newCode, setNewCode] = useState<string | null>(null)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
+    setIsSubmitting(true)
+    try {
+      setNewCode(await recoverPassword(email, code, password))
+    } catch (error) {
+      setError(friendlyAuthError(error, 'Unable to reset the password.'))
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  if (newCode) {
+    return (
+      <GateFrame>
+        <RecoveryCodeCard
+          code={newCode}
+          continueLabel="Go to log in"
+          intro="Your password was changed and other devices were signed out. Your old recovery code no longer works. Save this new one."
+          onContinue={onBack}
+          title="Password reset"
+        />
+      </GateFrame>
+    )
+  }
+
+  return (
+    <GateFrame>
+      <Panel eyebrow="Account recovery" title="Reset your password">
+        <p className="mb-4 text-sm leading-6 text-slate-600">
+          Enter the recovery code you saved when you created your account (it looks like
+          <span className="mx-1 font-mono text-slate-900">ABCD-EFGH-JKLM-NPQR</span>).
+          If you no longer have it, contact the EndoBridge administrators.
+        </p>
+        <form className="space-y-4" onSubmit={submit}>
+          <Field label="Email address">
+            <input
+              autoComplete="email"
+              className={fieldControlClass}
+              maxLength={254}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </Field>
+          <Field label="Recovery code">
+            <input
+              aria-label="Recovery code"
+              autoCapitalize="characters"
+              autoComplete="off"
+              className={`${fieldControlClass} font-mono uppercase tracking-wider`}
+              maxLength={40}
+              onChange={(event) => setCode(event.target.value)}
+              required
+              spellCheck={false}
+              value={code}
+            />
+          </Field>
+          <Field error="Use at least 8 characters." label="New password">
+            <input
+              aria-label="New password"
+              autoComplete="new-password"
+              className={fieldControlClass}
+              maxLength={128}
+              minLength={8}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+          </Field>
+          <Field label="Confirm new password">
+            <input
+              aria-label="Confirm new password"
+              autoComplete="new-password"
+              className={fieldControlClass}
+              maxLength={128}
+              minLength={8}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+              type="password"
+              value={confirmPassword}
+            />
+          </Field>
+          {error ? <p className="text-sm text-rose-700" role="alert">{error}</p> : null}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <PrimaryButton disabled={isSubmitting} type="submit">
+              <KeyRound size={18} />
+              {isSubmitting ? 'Please wait...' : 'Reset password'}
+            </PrimaryButton>
+            <SecondaryButton onClick={onBack} type="button">
+              Back to log in
+            </SecondaryButton>
+          </div>
+        </form>
+      </Panel>
+    </GateFrame>
+  )
+}
+
+export function RecoveryCodeCard({
+  code,
+  onContinue,
+  title = 'Save your recovery code',
+  intro = 'If you ever forget your password, this code lets you set a new one. It is shown only once, so write it down or save it somewhere safe.',
+  continueLabel = 'I saved it, continue',
+}: {
+  code: string
+  onContinue: () => void
+  title?: string
+  intro?: string
+  continueLabel?: string
+}) {
+  const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopied(true)
+    } catch {
+      setCopied(false)
+    }
+  }
+
+  return (
+    <Panel eyebrow="Account recovery" title={title}>
+      <p className="text-sm leading-6 text-slate-600">{intro}</p>
+      <div className="mt-4 flex flex-col gap-3 rounded-[14px] border-2 border-dashed border-indigo-300 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <p aria-label="Recovery code" className="break-all font-mono text-xl font-semibold tracking-wider text-slate-950">
+          {code}
+        </p>
+        <SecondaryButton onClick={copy} type="button">
+          <Copy size={16} />
+          {copied ? 'Copied' : 'Copy'}
+        </SecondaryButton>
+      </div>
+      <div className="mt-4">
+        <ChecklistItem checked={saved} label="I saved my recovery code somewhere safe." onChange={setSaved} />
+      </div>
+      <PrimaryButton className="mt-4" disabled={!saved} onClick={onContinue} type="button">
+        {continueLabel}
+      </PrimaryButton>
+    </Panel>
   )
 }
 
@@ -276,7 +479,7 @@ function ChecklistItem({
 
 function GateFrame({ children }: { children: ReactNode }) {
   return (
-    <main className="min-h-screen bg-[#f6f8fb] px-4 py-8">
+    <main className="min-h-screen bg-[#faf6f8] px-4 py-8">
       <h1 className="sr-only">EndoBridge</h1>
       <section className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-5xl items-center gap-6 lg:grid-cols-[0.85fr_1fr]">
         <div className="hidden lg:block">
